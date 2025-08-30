@@ -3569,6 +3569,165 @@ def create_gui():
                                         """)
                                 else:
                                     st.write("No suggestions found")
-                                    
+                    
+                    # Real-word errors
+                    if real_word_errors:
+                        st.write("**Context-based errors (homophones, confusables, collocations):**")
+                        for error_word, position, alternatives in real_word_errors:
+                            # Determine error type for better messaging
+                            error_type = "Context error"
+                            if error_word.lower() in st.session_state.corrector.homophones:
+                                error_type = "Homophone error"
+                            elif error_word.lower() in st.session_state.corrector.confusables:
+                                error_type = "Confusable word"
+                            
+                            with st.expander(f"🟡 '{error_word}' - {error_type} at position {position + 1}"):
+                                # Show context around the error
+                                words_list = text.split()
+                                start_idx = max(0, position - 2)
+                                end_idx = min(len(words_list), position + 3)
+                                context_snippet = ' '.join(words_list[start_idx:end_idx])
+                                st.info(f"Context: ...{context_snippet}...")
+                                
+                                st.write("**Better alternatives based on context:**")
+                                for alt in alternatives:
+                                    # Explain why this alternative is better
+                                    explanation = ""
+                                    if alt in st.session_state.corrector.homophones.get(error_word.lower(), set()):
+                                        explanation = " (homophone - sounds similar but different meaning)"
+                                    elif alt in st.session_state.corrector.confusables.get(error_word.lower(), set()):
+                                        explanation = " (commonly confused word)"
+                                    st.write(f"• **{alt}**{explanation}")
+                    
+                    # Now show the correction sections OUTSIDE of the error details
+                    st.markdown("---")  # Separator
+                    
+                    # Always show corrected text sections when errors are found
+                    # Highlighted text - Always show this
+                    st.subheader("📝 Highlighted Medical Text:")
+                    highlighted_text = text
+                    
+                    # Track all corrections for proper highlighting
+                    error_positions = {}
+                    
+                    # Collect non-word errors
+                    for error_word, _ in non_word_errors:
+                        # Find all occurrences of the error word
+                        pattern = re.compile(r'\b' + re.escape(error_word) + r'\b', re.IGNORECASE)
+                        for match in pattern.finditer(text):
+                            error_positions[match.span()] = ('non-word', error_word)
+                    
+                    # Collect real-word errors with their positions
+                    words_in_text = text.split()
+                    current_pos = 0
+                    for i, word in enumerate(words_in_text):
+                        for error_word, position, _ in real_word_errors:
+                            if i == position and word.lower() == error_word.lower():
+                                start = text.find(word, current_pos)
+                                if start != -1:
+                                    end = start + len(word)
+                                    error_positions[(start, end)] = ('context', word)
+                        current_pos = text.find(word, current_pos) + len(word) if word in text[current_pos:] else current_pos
+                    
+                    # Sort positions for proper replacement
+                    sorted_positions = sorted(error_positions.items(), key=lambda x: x[0][0], reverse=True)
+                    
+                    # Apply highlighting from end to start to maintain positions
+                    for (start, end), (error_type, word) in sorted_positions:
+                        if error_type == 'non-word':
+                            highlighted_text = (highlighted_text[:start] + 
+                                              f"**:red[{word}]**" + 
+                                              highlighted_text[end:])
+                        else:  # context error
+                            highlighted_text = (highlighted_text[:start] + 
+                                              f"**:orange[{word}]**" + 
+                                              highlighted_text[end:])
+                    
+                    st.markdown(highlighted_text)
+                    
+                    # Auto-corrected text section - Always show this
+                    st.markdown("---")
+                    st.subheader("✨ Auto-Corrected Text:")
+                    
+                    # Add confidence threshold slider
+                    confidence_threshold = st.slider(
+                        "Correction Confidence Threshold:",
+                        min_value=0.1,
+                        max_value=0.9,
+                        value=0.3,
+                        step=0.1,
+                        help="Higher values = only very confident corrections"
+                    )
+                    
+                    # Generate corrected text
+                    corrected_text, corrections_made = st.session_state.corrector.generate_corrected_text(
+                        text, 
+                        confidence_threshold=confidence_threshold
+                    )
+                    
+                    # Display corrected text in a nice format
+                    st.success(corrected_text)
+                    
+                    # NEW: Show possible corrections section - Always show this
+                    st.markdown("---")
+                    st.subheader("🔄 Possible Correct Sentences")
+                    
+                    # Generate multiple possible corrections
+                    possible_corrections = st.session_state.corrector.generate_possible_corrections(text, num_variations=3)
+                    
+                    if possible_corrections:
+                        # Display each possibility
+                        for idx, possibility in enumerate(possible_corrections, 1):
+                            with st.expander(f"Option {idx}: {possibility['strategy']} Strategy ({possibility['confidence']:.0%} confidence)", expanded=(idx==1)):
+                                # Show the corrected text prominently
+                                st.success(possibility['corrected_text'])
+                                
+                                # Show metrics
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Confidence", f"{possibility['confidence']:.0%}")
+                                with col2:
+                                    st.metric("Changes Made", possibility['num_changes'])
+                                with col3:
+                                    st.metric("Strategy", possibility['strategy'])
+                                
+                                # Show explanation
+                                st.write("**Explanation:**")
+                                st.write(possibility['explanation'])
+                                
+                                # Show detailed corrections if any
+                                if possibility['corrections']:
+                                    st.write("**Detailed Changes:**")
+                                    for correction in possibility['corrections']:
+                                        if correction['type'] == 'spelling':
+                                            st.write(f"• **Spelling:** '{correction['original']}' → '{correction['correction']}' ({correction.get('confidence', 0.5):.0%})")
+                                        elif correction['type'] == 'homophone':
+                                            st.write(f"• **Homophone:** '{correction['original']}' → '{correction['correction']}' (sound-alike word)")
+                                        elif correction['type'] == 'confusable':
+                                            st.write(f"• **Confusable:** '{correction['original']}' → '{correction['correction']}' (commonly confused)")
+                                        else:
+                                            st.write(f"• **Context:** '{correction['original']}' → '{correction['correction']}' (better fit)")
+                                
+                                # Add copy button for this option
+                                if st.button(f"📋 Use Option {idx}", key=f"use_option_{idx}"):
+                                    st.session_state.selected_correction = possibility['corrected_text']
+                                    st.success(f"Option {idx} selected! Text copied to clipboard area below.")
+                    
+                    # Show selected correction if any
+                    if 'selected_correction' in st.session_state:
+                        st.markdown("---")
+                        st.subheader("📋 Selected Correction")
+                        st.code(st.session_state.selected_correction, language=None)
+                        st.info("Copy the text above to use it")
+                    
+                    # Legend
+                    st.caption("🔴 Red: Non-medical word errors | 🟡 Orange: Context/Homophone/Confusable errors")
+                
+                else:
+                    st.success("✅ No spelling errors detected!")
+    else:
+        st.info("👆 Please load the medical corpus first using the button in the sidebar.")
+        
+        
 if __name__ == "__main__":
     create_gui()
