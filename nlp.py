@@ -1,0 +1,3135 @@
+# import streamlit as st
+# import pandas as pd
+# import numpy as np
+# from collections import Counter, defaultdict
+# import re
+# import requests
+# from typing import List, Tuple, Dict
+# import nltk
+# from nltk.corpus import reuters
+# from nltk.tokenize import word_tokenize
+# import string
+# from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.metrics.pairwise import cosine_similarity
+# import spacy
+
+# # Download required NLTK data
+# try:
+#     nltk.download('reuters', quiet=True)
+#     nltk.download('punkt', quiet=True)
+#     nltk.download('stopwords', quiet=True)
+# except:
+#     pass
+
+# class SpellingCorrector:
+#     def __init__(self):
+#         self.vocabulary = set()
+#         self.word_freq = Counter()
+#         self.bigrams = defaultdict(Counter)
+#         self.word_vectors = {}
+#         self.tfidf_vectorizer = None
+#         self.corpus_text = ""
+#     # Replace the load_corpus() method in your SpellingCorrector class with this:
+
+#     def load_corpus(self):
+#         """Load comprehensive medical corpus from MTSamples + PubMed API"""
+#         try:
+#             import requests
+#             corpus_words = []
+        
+#         # ============ PART 1: Load MTSamples Dataset ============
+#             st.info("Loading medical transcriptions corpus...")
+#             mtsamples_loaded = False
+        
+#             try:
+#             # First try to download MTSamples automatically from GitHub mirror
+#                 url = "https://raw.githubusercontent.com/chandelsman/Medical-Text-Classification/master/data/mtsamples.csv"
+#                 df = pd.read_csv(url)
+            
+#             # Process medical transcriptions
+#                 for idx, row in df.iterrows():
+#                 # Get transcription text
+#                     if pd.notna(row.get('transcription', '')):
+#                         text = str(row['transcription']).lower()
+#                         words = re.findall(r'\b[a-z]+\b', text)
+#                         corpus_words.extend(words)
+                
+#                 # Add medical specialties
+#                     if pd.notna(row.get('medical_specialty', '')):
+#                         specialty = str(row['medical_specialty']).lower()
+#                         corpus_words.extend(specialty.replace('/', ' ').split())
+                
+#                 # Add keywords
+#                     if pd.notna(row.get('keywords', '')):
+#                         keywords = str(row['keywords']).lower()
+#                         corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                 # Add sample names (procedures)
+#                     if pd.notna(row.get('sample_name', '')):
+#                         sample = str(row['sample_name']).lower()
+#                         corpus_words.extend(sample.split())
+            
+#                 mtsamples_loaded = True
+#                 st.success(f"✓ Loaded MTSamples: {len(set(corpus_words))} unique terms")
+            
+#             except Exception as e1:
+#             # If download fails, try local file
+#                 try:
+#                     df = pd.read_csv('mtsamples.csv')
+                
+#                     for idx, row in df.iterrows():
+#                         if pd.notna(row.get('transcription', '')):
+#                             text = str(row['transcription']).lower()
+#                             words = re.findall(r'\b[a-z]+\b', text)
+#                             corpus_words.extend(words)
+                    
+#                         if pd.notna(row.get('medical_specialty', '')):
+#                             specialty = str(row['medical_specialty']).lower()
+#                             corpus_words.extend(specialty.replace('/', ' ').split())
+                    
+#                         if pd.notna(row.get('keywords', '')):
+#                             keywords = str(row['keywords']).lower()
+#                             corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                     mtsamples_loaded = True
+#                     st.success(f"✓ Loaded local MTSamples: {len(set(corpus_words))} unique terms")
+                
+#                 except FileNotFoundError:
+#                     st.warning("MTSamples not found locally. Download from: https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions")
+#                     st.info("Continuing with PubMed data only...")
+        
+#         # ============ PART 2: Load PubMed Medical Literature ============
+#             st.info("Fetching medical literature from PubMed...")
+        
+#             base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+#         # Comprehensive medical search terms
+#             medical_topics = [
+#                 'clinical diagnosis', 'patient treatment', 'medical therapy',
+#                 'diabetes mellitus', 'hypertension management', 'cancer treatment',
+#                 'cardiovascular disease', 'infectious disease', 'neurological disorders',
+#                 'pediatric medicine', 'surgical procedures', 'pharmacology drugs',
+#                 'emergency medicine', 'internal medicine', 'psychiatry mental health',
+#                 'orthopedic surgery', 'obstetrics gynecology', 'radiology imaging',
+#                 'anesthesiology', 'pathology laboratory', 'dermatology skin',
+#                 'ophthalmology eye', 'otolaryngology ENT', 'urology kidney',
+#                 'gastroenterology digestive', 'endocrinology hormones', 'hematology blood',
+#                 'immunology allergy', 'nephrology renal', 'pulmonology respiratory',
+#                 'rheumatology arthritis', 'clinical trials', 'medical research'
+#             ]
+        
+#             # Progress bar for PubMed loading
+#             progress_bar = st.progress(0)
+#             pubmed_words = []
+        
+#             for idx, topic in enumerate(medical_topics):
+#                 try:
+#                 # Search for articles
+#                     search_url = f"{base_url}esearch.fcgi?db=pubmed&term={topic}&retmax=100&retmode=json"
+#                     search_response = requests.get(search_url, timeout=5)
+#                     search_data = search_response.json()
+                
+#                 # Get PMIDs
+#                     id_list = search_data.get('esearchresult', {}).get('idlist', [])[:50]
+                
+#                     if id_list:
+#                     # Fetch abstracts
+#                         ids_string = ','.join(id_list)
+#                         fetch_url = f"{base_url}efetch.fcgi?db=pubmed&id={ids_string}&rettype=abstract"
+#                         fetch_response = requests.get(fetch_url, timeout=10)
+                    
+#                     # Extract medical terms (3+ characters)
+#                         text = fetch_response.text.lower()
+#                         words = [w for w in re.findall(r'\b[a-z]+\b', text) if len(w) >= 3]
+#                         pubmed_words.extend(words)
+                
+#                 # Update progress
+#                     progress_bar.progress((idx + 1) / len(medical_topics))
+                
+#                 except Exception:
+#                     continue
+        
+#             progress_bar.empty()
+#             corpus_words.extend(pubmed_words)
+#             st.success(f"✓ Loaded PubMed: {len(set(pubmed_words))} unique terms")
+        
+#         # ============ PART 3: Add Medical Terminology Database ============
+#             st.info("Adding medical terminology database...")
+        
+#         # Download medical terms list
+#             try:
+#                 medical_terms_url = "https://raw.githubusercontent.com/glutanimate/wordlist-medicalterms-en/master/wordlist.txt"
+#                 response = requests.get(medical_terms_url)
+#                 medical_terms = response.text.lower().split('\n')
+#                 medical_terms = [term.strip() for term in medical_terms if term.strip() and len(term.strip()) >= 3]
+#                 corpus_words.extend(medical_terms * 10)  # Add with frequency weight
+#                 st.success(f"✓ Added {len(medical_terms)} medical dictionary terms")
+#             except:
+#                 pass
+        
+#         # ============ PART 4: Add Core Medical Vocabulary ============
+#         # Essential medical terms to ensure coverage
+#             core_medical_vocab = """
+#             abdominal abdomen abnormal abscess absorption accident acidosis acne acute adenoma adhesion adipose admission adrenal adult adverse airway albumin alcohol allergy alopecia alzheimer ambulance amino amnesia amniotic amputation analgesia analgesic anaphylaxis anastomosis anatomy anemia anesthesia aneurysm angina angiogram angioplasty ankle anomaly anorexia antacid anterior antibiotic antibody antidepressant antigen antihistamine antimicrobial antipsychotic antiseptic antiviral anxiety aorta aortic appendectomy appendicitis appendix appetite arrhythmia arterial arteriosclerosis artery arthritis arthroscopy articulation artificial ascites aseptic aspiration aspirin assessment asthma asymptomatic ataxia atherosclerosis atrial atrium atrophy attack audiometry auditory auscultation autism autoimmune autonomic autopsy axial axis axon
+        
+#             bacteria bacterial bacterium balance balloon bandage barium barrier basal baseline behavior benign beta bicarbonate bilateral bile biliary bilirubin biochemical biopsy bipolar birth bladder bleeding blind blood blurred body bone bowel brachial bradycardia brain brainstem branch breast breath breathing bronchial bronchitis bronchoscopy bronchospasm bronchus bruise buffer bulimia burn burning bursa bursitis bypass
+        
+#             cachexia caesarean calcification calcium calculus caliber calorie cancer candidiasis cannula capacity capillary capsule carbohydrate carbon carcinogen carcinoma cardiac cardiomyopathy cardiopulmonary cardiovascular care caregiver caries carotid carpal cartilage case cast cataract catheter catheterization cauterization cavity cell cellular cellulitis center central cerebellar cerebellum cerebral cerebrospinal cerebrovascular cerebrum certification cervical cervix cessation chamber change channel characteristic charting check chemical chemotherapy chest childhood children chlamydia chloride cholecystectomy cholecystitis cholera cholesterol chronic circulation circulatory cirrhosis classification claudication clavicle clearance cleft client clinical clinic clitoris clone clonic closure clot clotting cluster coagulation cochlea code cognitive coil cold colic colitis collapse colon colonoscopy color colorectal colostomy colposcopy coma combination comfort common communicable communication community comparison compartment compensation complaint complement complete complex compliance complication component compound comprehensive compression computed concentration conception concussion condition condom conduction conductive congenital congestion congestive conjunctiva conjunctivitis connective conscious consciousness consent conservative consideration consolidation constant constipation constitutional constriction consultation consumption contact contagious contamination content context continence continuation continuous contour contraception contraceptive contractility contraction contracture contraindication contralateral contrast control controlled contusion conventional conversion convulsion coordination cope coping cord core cornea corneal coronary corpus correction correlation cortex cortical corticosteroid cortisol cosmetic costal cough counseling count course coverage crack crackle cramp cranial craniotomy craving creatine creatinine crepitus crisis criteria critical cross croup crown crucial cruciate crush crust crutch cryotherapy culture cumulative curative cure current curvature curve cushion custom cutaneous cutting cyanosis cycle cyclic cylinder cyst cystectomy cystic cystitis cystoscopy cytology cytomegalovirus cytoplasm cytotoxic
+        
+#             daily damage data database date dead deaf deafness death debridement debris decay decubitus deep defecation defect defense deficiency deficit definitive deformity degeneration degenerative dehydration delay delayed deletion delirium delivery delta deltoid delusion dementia demyelination dendrite denial dense density dental dentist dentition denture dependence dependent depersonalization depolarization deposit depression deprivation depth derivative dermal dermatitis dermatology dermis descending description desensitization design desire destruction detachment detail detection deterioration determination detoxification development developmental deviated deviation device diabetes diabetic diagnosis diagnostic dialysis diameter diaphoresis diaphragm diaphragmatic diarrhea diastole diastolic diet dietary differential differentiation diffuse diffusion digestion digestive digital dilatation dilation dilator dimension diminished dioxide diphtheria diplopia direct direction disability disabled disc discharge discipline discomfort disconnection discontinuation discrete discrimination disease disinfectant disinfection disk dislocation disorder disorganized disorientation displacement disposal disruption dissection disseminated dissociation distal distance distention distortion distress distribution disturbance diuresis diuretic diverticula diverticulitis diverticulosis diverticulum divided division dizziness doctor document documentation domain dome domestic dominant dominance donation donor dopamine doppler dormant dorsal dorsiflexion dorsum dosage dose double doubt douche down drain drainage drawing dream dressing drift drill drinking drip drive drooling drop droplet drug drunk dual duct ductus dull duodenal duodenum duplex duplicate dura durable duration dust duty dwarfism dying dynamic dysfunction dyslexia dysmenorrhea dyspareunia dyspepsia dysphagia dysphasia dysplasia dyspnea dysrhythmia dystocia dystonia dystrophy dysuria
+        
+#             ear early eating ecchymosis echocardiogram echocardiography eclampsia ectasia ectopic ectopy eczema edema edematous edge education effect effective effector efferent efficacy efficiency effort effusion eight elastic elasticity elbow elderly elective electric electrical electrocardiogram electrocardiography electrode electroencephalogram electroencephalography electrolyte electromyography electron electronic electrophysiology element elevation eligible elimination emaciation embolectomy embolism embolization embolus embryo embryonic emergency emesis emission emotion emotional empathy emphysema empiric empty empyema emulsification enable enamel encephalitis encephalopathy encoding encounter endemic endocarditis endocardium endocrine endocrinology endogenous endometrial endometriosis endometrium endorphin endoscope endoscopic endoscopy endothelial endothelium endotracheal endurance enema energy engagement engine enhancement enlargement enteral enteric enteritis enterocele enterocolitis enterostomy entrapment entry enucleation enuresis environment environmental enzyme eosinophil eosinophilia ependyma epicardium epicondyle epidemic epidemiology epidermal epidermis epidural epigastric epiglottis epilepsy epinephrine epiphyseal epiphysis episode episodic epispadias epistaxis epithelial epithelium equilibrium equipment equivalent erectile erection erosion error eruption erythema erythrocyte erythropoiesis erythropoietin escape eschar esophageal esophagitis esophagoscopy esophagus essential established ester estimate estrogen ether ethical ethics ethmoid etiology eupnea eustachian euthanasia evacuation evaluation evaporation evening event eversion evidence evoked exacerbation examination example excavation excess exchange excision excitation excitement excoriation excretion excursion exercise exertion exfoliation exhalation exhaustion exocrine exogenous exophthalmos exostosis exotoxin expansion expectancy expectant expectorant expectoration experience experiment experimental expiration expiratory explanation exploration exploratory explosion exposure expression extension extensive extensor extent external extracellular extracorporeal extraction extradural extraocular extrapyramidal extrasystole extrauterine extravasation extremity extrinsic exudate exudation eye eyeball eyelid
+        
+#             face facial facilitate facility factor failure fainting fall fallopian false familial family fascia fasciculation fasciotomy fasting fatal fatigue fatty faucial fauces febrile fecal feces feeding feet fellow female femoral femur fenestration ferritin fertile fertility fertilization fetal fetus fever fiber fibrillation fibrin fibrinogen fibroblast fibroid fibroma fibrosis fibrous fibula field fifth figure filament film filter filtration fimbria final finding fine finger first fissure fistula fitness five fixation flaccid flagellum flank flap flat flatulence flatus flexibility flexion flexor flexure flight floating floor flora flow fluctuation fluid fluorescence fluoride fluoroscopy flush flutter foam focal focus fold foley follicle follicular fontanelle food foot foramen force forceps forearm foreign foreskin form formation formula fornix fossa four fovea fraction fracture fragile fragment frank free freedom fremitus frequency frequent friction frontal frostbite frozen fructose full function functional fundus fungal fungus funnel fusion
+#             """
+        
+#             core_words = core_medical_vocab.split()
+#             corpus_words.extend(core_words * 20)  # Add core vocabulary with good frequency
+        
+#         # ============ PART 5: Build Final Corpus ============
+#             self.word_freq = Counter(corpus_words)
+#             self.vocabulary = set(self.word_freq.keys())
+        
+#         # Build bigrams for context checking
+#             st.info("Building bigram model...")
+#             for i in range(len(corpus_words) - 1):
+#                 if i < len(corpus_words) - 1:
+#                     self.bigrams[corpus_words[i]][corpus_words[i + 1]] += 1
+        
+#         # Store sample text for context
+#             self.corpus_text = ' '.join(corpus_words[:100000])
+        
+#         # Final statistics
+#             total_words = len(self.vocabulary)
+#             total_tokens = sum(self.word_freq.values())
+        
+#             st.success(f"""
+#             ✅ **Corpus Successfully Loaded!**
+#             - Unique medical terms: **{total_words:,}**
+#             - Total word tokens: **{total_tokens:,}**
+#             - Bigram pairs: **{len(self.bigrams):,}**
+#             - Sources: MTSamples + PubMed + Medical Dictionary
+#             """)
+        
+#             return True
+        
+#         except Exception as e:
+#             st.error(f"Error loading corpus: {e}")
+#             return False    
+    
+    
+#     def levenshtein_distance(self, s1: str, s2: str) -> int:
+#         """Calculate minimum edit distance between two strings"""
+#         if len(s1) < len(s2):
+#             return self.levenshtein_distance(s2, s1)
+        
+#         if len(s2) == 0:
+#             return len(s1)
+        
+#         prev_row = range(len(s2) + 1)
+#         for i, c1 in enumerate(s1):
+#             curr_row = [i + 1]
+#             for j, c2 in enumerate(s2):
+#                 insertions = prev_row[j + 1] + 1
+#                 deletions = curr_row[j] + 1
+#                 substitutions = prev_row[j] + (c1 != c2)
+#                 curr_row.append(min(insertions, deletions, substitutions))
+#             prev_row = curr_row
+        
+#         return prev_row[-1]
+    
+#     def jaccard_similarity(self, s1: str, s2: str) -> float:
+#         """Calculate Jaccard similarity between two strings"""
+#         set1 = set(s1)
+#         set2 = set(s2)
+#         intersection = set1.intersection(set2)
+#         union = set1.union(set2)
+#         return len(intersection) / len(union) if union else 0
+    
+#     def get_candidates(self, word: str, max_distance: int = 2) -> List[Tuple[str, int, float]]:
+#         """Generate candidate corrections with edit distance and frequency score"""
+#         candidates = []
+#         word_lower = word.lower()
+        
+#         for vocab_word in self.vocabulary:
+#             distance = self.levenshtein_distance(word_lower, vocab_word)
+#             if distance <= max_distance:
+#                 freq_score = self.word_freq[vocab_word] / sum(self.word_freq.values())
+#                 jaccard_sim = self.jaccard_similarity(word_lower, vocab_word)
+#                 # Combined score: lower distance is better, higher frequency is better
+#                 combined_score = (1 / (distance + 1)) * freq_score * (jaccard_sim + 0.1)
+#                 candidates.append((vocab_word, distance, combined_score))
+        
+#         # Sort by combined score (descending)
+#         candidates.sort(key=lambda x: x[2], reverse=True)
+#         return candidates[:5]  # Return top 5 candidates
+    
+#     def check_bigram_probability(self, prev_word: str, word: str) -> float:
+#         """Check bigram probability for context-based correction"""
+#         if prev_word in self.bigrams:
+#             total = sum(self.bigrams[prev_word].values())
+#             if total > 0:
+#                 return self.bigrams[prev_word][word] / total
+#         return 0.0
+    
+#     def detect_real_word_errors(self, text: str) -> List[Tuple[str, int, List[str]]]:
+#         """Detect real-word errors using context (bigram analysis)"""
+#         words = text.lower().split()
+#         errors = []
+        
+#         for i in range(1, len(words)):
+#             prev_word = words[i-1]
+#             curr_word = words[i]
+            
+#             if curr_word in self.vocabulary:
+#                 # Check bigram probability
+#                 prob = self.check_bigram_probability(prev_word, curr_word)
+                
+#                 # If probability is very low, might be a real-word error
+#                 if prob < 0.001 and self.word_freq[curr_word] < 100:
+#                     # Find better alternatives based on context
+#                     alternatives = []
+#                     for alt_word in self.vocabulary:
+#                         if self.levenshtein_distance(curr_word, alt_word) <= 2:
+#                             alt_prob = self.check_bigram_probability(prev_word, alt_word)
+#                             if alt_prob > prob * 10:  # Significantly better probability
+#                                 alternatives.append((alt_word, alt_prob))
+                    
+#                     if alternatives:
+#                         alternatives.sort(key=lambda x: x[1], reverse=True)
+#                         errors.append((curr_word, i, [alt[0] for alt in alternatives[:3]]))
+        
+#         return errors
+    
+#     def cosine_similarity_check(self, text: str, suggestions: List[str]) -> List[Tuple[str, float]]:
+#         """Use cosine similarity to rank suggestions based on context"""
+#         if not suggestions:
+#             return []
+        
+#         try:
+#             # Create TF-IDF vectors
+#             vectorizer = TfidfVectorizer()
+#             all_texts = [text] + suggestions
+#             tfidf_matrix = vectorizer.fit_transform(all_texts)
+            
+#             # Calculate cosine similarity
+#             similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])
+            
+#             # Pair suggestions with similarities
+#             result = [(suggestions[i], similarities[0][i]) for i in range(len(suggestions))]
+#             result.sort(key=lambda x: x[1], reverse=True)
+#             return result
+#         except:
+#             return [(s, 0.0) for s in suggestions]
+
+# def create_gui():
+#     st.set_page_config(page_title="Advanced Spelling Corrector", layout="wide")
+    
+#     # Initialize session state
+#     if 'corrector' not in st.session_state:
+#         st.session_state.corrector = SpellingCorrector()
+#         st.session_state.corpus_loaded = False
+    
+#     if 'selected_word' not in st.session_state:
+#         st.session_state.selected_word = None
+    
+#     st.title("🔤 Advanced Spelling Correction System")
+#     st.markdown("---")
+    
+#     # Sidebar for corpus management
+#     with st.sidebar:
+#         st.header("📚 Corpus Management")
+        
+#         if not st.session_state.corpus_loaded:
+#             if st.button("Load Reuters Corpus", type="primary"):
+#                 with st.spinner("Loading corpus..."):
+#                     if st.session_state.corrector.load_corpus():
+#                         st.session_state.corpus_loaded = True
+#                         st.success(f"Loaded {len(st.session_state.corrector.vocabulary)} unique words!")
+#                         st.rerun()
+#         else:
+#             st.success(f"✓ Corpus loaded: {len(st.session_state.corrector.vocabulary)} words")
+            
+#             # Dictionary viewer
+#             st.header("📖 Dictionary")
+            
+#             # Search functionality
+#             search_term = st.text_input("Search word:", key="search")
+            
+#             # Display vocabulary
+#             if st.checkbox("Show all words"):
+#                 sorted_words = sorted(list(st.session_state.corrector.vocabulary))
+                
+#                 # Pagination
+#                 words_per_page = 100
+#                 total_pages = len(sorted_words) // words_per_page + 1
+#                 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1)
+                
+#                 start_idx = (page - 1) * words_per_page
+#                 end_idx = min(start_idx + words_per_page, len(sorted_words))
+                
+#                 st.write(f"Showing words {start_idx+1} to {end_idx} of {len(sorted_words)}")
+                
+#                 # Display words in columns
+#                 cols = st.columns(4)
+#                 page_words = sorted_words[start_idx:end_idx]
+#                 for i, word in enumerate(page_words):
+#                     if search_term and search_term.lower() in word:
+#                         cols[i % 4].markdown(f"**:red[{word}]**")
+#                     else:
+#                         cols[i % 4].write(word)
+            
+#             # Word frequency stats
+#             if st.checkbox("Show top frequent words"):
+#                 top_words = st.session_state.corrector.word_freq.most_common(20)
+#                 df = pd.DataFrame(top_words, columns=["Word", "Frequency"])
+#                 st.dataframe(df)
+    
+#     # Main content area
+#     if st.session_state.corpus_loaded:
+#         col1, col2 = st.columns([1, 1])
+        
+#         with col1:
+#             st.header("✍️ Text Editor")
+            
+#             # Text input area (500 characters max)
+#             user_text = st.text_area(
+#                 "Enter your text (max 500 characters):",
+#                 max_chars=500,
+#                 height=200,
+#                 placeholder="Type or paste your text here...",
+#                 key="text_input"
+#             )
+            
+#             # Check spelling button
+#             if st.button("🔍 Check Spelling", type="primary"):
+#                 if user_text:
+#                     st.session_state.checking = True
+#                     st.session_state.text_to_check = user_text
+#                 else:
+#                     st.warning("Please enter some text to check.")
+        
+#         with col2:
+#             st.header("📊 Analysis Results")
+            
+#             if 'checking' in st.session_state and st.session_state.checking:
+#                 text = st.session_state.text_to_check
+#                 words = re.findall(r'\b[a-zA-Z]+\b', text)
+                
+#                 # Find non-word errors
+#                 non_word_errors = []
+#                 for word in words:
+#                     if word.lower() not in st.session_state.corrector.vocabulary:
+#                         candidates = st.session_state.corrector.get_candidates(word)
+#                         non_word_errors.append((word, candidates))
+                
+#                 # Find real-word errors
+#                 real_word_errors = st.session_state.corrector.detect_real_word_errors(text)
+                
+#                 # Display errors
+#                 if non_word_errors or real_word_errors:
+#                     st.subheader("❌ Spelling Errors Found:")
+                    
+#                     # Non-word errors
+#                     if non_word_errors:
+#                         st.write("**Non-word errors:**")
+#                         for error_word, candidates in non_word_errors:
+#                             with st.expander(f"🔴 '{error_word}' - Not in dictionary"):
+#                                 if candidates:
+#                                     st.write("**Suggestions (with edit distance):**")
+#                                     for suggestion, distance, score in candidates:
+#                                         st.write(f"• {suggestion} (distance: {distance}, score: {score:.4f})")
+#                                 else:
+#                                     st.write("No suggestions found")
+                    
+#                     # Real-word errors
+#                     if real_word_errors:
+#                         st.write("**Potential context errors:**")
+#                         for error_word, position, alternatives in real_word_errors:
+#                             with st.expander(f"🟡 '{error_word}' - Possible context error"):
+#                                 st.write(f"Position: word #{position}")
+#                                 st.write("**Better alternatives based on context:**")
+#                                 for alt in alternatives:
+#                                     st.write(f"• {alt}")
+                    
+#                     # Highlighted text
+#                     st.subheader("📝 Highlighted Text:")
+#                     highlighted_text = text
+#                     for error_word, _ in non_word_errors:
+#                         highlighted_text = highlighted_text.replace(
+#                             error_word, 
+#                             f"**:red[{error_word}]**"
+#                         )
+#                     for error_word, _, _ in real_word_errors:
+#                         highlighted_text = re.sub(
+#                             r'\b' + error_word + r'\b',
+#                             f"**:orange[{error_word}]**",
+#                             highlighted_text,
+#                             flags=re.IGNORECASE
+#                         )
+#                     st.markdown(highlighted_text)
+                    
+#                     # Legend
+#                     st.caption("🔴 Red: Non-word errors | 🟡 Orange: Context errors")
+#                 else:
+#                     st.success("✅ No spelling errors found!")
+                
+#                 st.session_state.checking = False
+#     else:
+#         st.info("👈 Please load the corpus from the sidebar to begin.")
+    
+#     # Footer with techniques used
+#     st.markdown("---")
+#     with st.expander("ℹ️ Techniques Used"):
+#         st.write("""
+#         - **Levenshtein Distance**: For finding similar words and calculating edit distance
+#         - **Bigram Analysis**: For detecting context-based real-word errors
+#         - **Jaccard Similarity**: For character set comparison
+#         - **Cosine Similarity**: For context-based ranking (TF-IDF)
+#         - **Frequency Analysis**: For ranking suggestions by corpus frequency
+#         - **Combined Scoring**: Weighted combination of multiple metrics
+#         """)
+
+# if __name__ == "__main__":
+#     create_gui()
+
+# import streamlit as st
+# import pandas as pd
+# import numpy as np
+# from collections import Counter, defaultdict
+# import re
+# import requests
+# from typing import List, Tuple, Dict
+# import nltk
+# from nltk.tokenize import word_tokenize
+# import string
+# from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.metrics.pairwise import cosine_similarity
+
+# # Download required NLTK data
+# try:
+#     nltk.download('punkt', quiet=True)
+#     nltk.download('stopwords', quiet=True)
+# except:
+#     pass
+
+# class SpellingCorrector:
+#     def __init__(self):
+#         self.vocabulary = set()
+#         self.word_freq = Counter()
+#         self.bigrams = defaultdict(Counter)
+#         self.word_vectors = {}
+#         self.tfidf_vectorizer = None
+#         self.corpus_text = ""
+        
+#     def load_corpus(self):
+#         """Load comprehensive medical corpus from MTSamples + PubMed API"""
+#         try:
+#             import requests
+#             corpus_words = []
+        
+#             # ============ PART 1: Load MTSamples Dataset ============
+#             st.info("Loading medical transcriptions corpus...")
+#             mtsamples_loaded = False
+        
+#             try:
+#                 # First try to download MTSamples automatically from GitHub mirror
+#                 url = "https://raw.githubusercontent.com/chandelsman/Medical-Text-Classification/master/data/mtsamples.csv"
+#                 df = pd.read_csv(url)
+            
+#                 # Process medical transcriptions
+#                 for idx, row in df.iterrows():
+#                     # Get transcription text
+#                     if pd.notna(row.get('transcription', '')):
+#                         text = str(row['transcription']).lower()
+#                         words = re.findall(r'\b[a-z]+\b', text)
+#                         corpus_words.extend(words)
+                
+#                     # Add medical specialties
+#                     if pd.notna(row.get('medical_specialty', '')):
+#                         specialty = str(row['medical_specialty']).lower()
+#                         corpus_words.extend(specialty.replace('/', ' ').split())
+                
+#                     # Add keywords
+#                     if pd.notna(row.get('keywords', '')):
+#                         keywords = str(row['keywords']).lower()
+#                         corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                     # Add sample names (procedures)
+#                     if pd.notna(row.get('sample_name', '')):
+#                         sample = str(row['sample_name']).lower()
+#                         corpus_words.extend(sample.split())
+            
+#                 mtsamples_loaded = True
+#                 st.success(f"✓ Loaded MTSamples: {len(set(corpus_words))} unique terms")
+            
+#             except Exception as e1:
+#                 # If download fails, try local file
+#                 try:
+#                     df = pd.read_csv('mtsamples.csv')
+                
+#                     for idx, row in df.iterrows():
+#                         if pd.notna(row.get('transcription', '')):
+#                             text = str(row['transcription']).lower()
+#                             words = re.findall(r'\b[a-z]+\b', text)
+#                             corpus_words.extend(words)
+                    
+#                         if pd.notna(row.get('medical_specialty', '')):
+#                             specialty = str(row['medical_specialty']).lower()
+#                             corpus_words.extend(specialty.replace('/', ' ').split())
+                    
+#                         if pd.notna(row.get('keywords', '')):
+#                             keywords = str(row['keywords']).lower()
+#                             corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                     mtsamples_loaded = True
+#                     st.success(f"✓ Loaded local MTSamples: {len(set(corpus_words))} unique terms")
+                
+#                 except FileNotFoundError:
+#                     st.warning("MTSamples not found locally. Download from: https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions")
+#                     st.info("Continuing with PubMed data only...")
+        
+#             # ============ PART 2: Load PubMed Medical Literature ============
+#             st.info("Fetching medical literature from PubMed...")
+        
+#             base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+#             # Comprehensive medical search terms
+#             medical_topics = [
+#                 'clinical diagnosis', 'patient treatment', 'medical therapy',
+#                 'diabetes mellitus', 'hypertension management', 'cancer treatment',
+#                 'cardiovascular disease', 'infectious disease', 'neurological disorders',
+#                 'pediatric medicine', 'surgical procedures', 'pharmacology drugs',
+#                 'emergency medicine', 'internal medicine', 'psychiatry mental health',
+#                 'orthopedic surgery', 'obstetrics gynecology', 'radiology imaging',
+#                 'anesthesiology', 'pathology laboratory', 'dermatology skin',
+#                 'ophthalmology eye', 'otolaryngology ENT', 'urology kidney',
+#                 'gastroenterology digestive', 'endocrinology hormones', 'hematology blood',
+#                 'immunology allergy', 'nephrology renal', 'pulmonology respiratory',
+#                 'rheumatology arthritis', 'clinical trials', 'medical research'
+#             ]
+        
+#             # Progress bar for PubMed loading
+#             progress_bar = st.progress(0)
+#             pubmed_words = []
+        
+#             for idx, topic in enumerate(medical_topics):
+#                 try:
+#                     # Search for articles
+#                     search_url = f"{base_url}esearch.fcgi?db=pubmed&term={topic}&retmax=100&retmode=json"
+#                     search_response = requests.get(search_url, timeout=5)
+#                     search_data = search_response.json()
+                
+#                     # Get PMIDs
+#                     id_list = search_data.get('esearchresult', {}).get('idlist', [])[:50]
+                
+#                     if id_list:
+#                         # Fetch abstracts
+#                         ids_string = ','.join(id_list)
+#                         fetch_url = f"{base_url}efetch.fcgi?db=pubmed&id={ids_string}&rettype=abstract"
+#                         fetch_response = requests.get(fetch_url, timeout=10)
+                    
+#                         # Extract medical terms (3+ characters)
+#                         text = fetch_response.text.lower()
+#                         words = [w for w in re.findall(r'\b[a-z]+\b', text) if len(w) >= 3]
+#                         pubmed_words.extend(words)
+                
+#                     # Update progress
+#                     progress_bar.progress((idx + 1) / len(medical_topics))
+                
+#                 except Exception:
+#                     continue
+        
+#             progress_bar.empty()
+#             corpus_words.extend(pubmed_words)
+#             st.success(f"✓ Loaded PubMed: {len(set(pubmed_words))} unique terms")
+        
+#             # ============ PART 3: Add Medical Terminology Database ============
+#             st.info("Adding medical terminology database...")
+        
+#             # Download medical terms list
+#             try:
+#                 medical_terms_url = "https://raw.githubusercontent.com/glutanimate/wordlist-medicalterms-en/master/wordlist.txt"
+#                 response = requests.get(medical_terms_url)
+#                 medical_terms = response.text.lower().split('\n')
+#                 medical_terms = [term.strip() for term in medical_terms if term.strip() and len(term.strip()) >= 3]
+#                 corpus_words.extend(medical_terms * 10)  # Add with frequency weight
+#                 st.success(f"✓ Added {len(medical_terms)} medical dictionary terms")
+#             except:
+#                 pass
+        
+#             # ============ PART 4: Add Core Medical Vocabulary ============
+#             # Essential medical terms to ensure coverage
+#             core_medical_vocab = """
+#             abdominal abdomen abnormal abscess absorption accident acidosis acne acute adenoma adhesion adipose admission adrenal adult adverse airway albumin alcohol allergy alopecia alzheimer ambulance amino amnesia amniotic amputation analgesia analgesic anaphylaxis anastomosis anatomy anemia anesthesia aneurysm angina angiogram angioplasty ankle anomaly anorexia antacid anterior antibiotic antibody antidepressant antigen antihistamine antimicrobial antipsychotic antiseptic antiviral anxiety aorta aortic appendectomy appendicitis appendix appetite arrhythmia arterial arteriosclerosis artery arthritis arthroscopy articulation artificial ascites aseptic aspiration aspirin assessment asthma asymptomatic ataxia atherosclerosis atrial atrium atrophy attack audiometry auditory auscultation autism autoimmune autonomic autopsy axial axis axon
+        
+#             bacteria bacterial bacterium balance balloon bandage barium barrier basal baseline behavior benign beta bicarbonate bilateral bile biliary bilirubin biochemical biopsy bipolar birth bladder bleeding blind blood blurred body bone bowel brachial bradycardia brain brainstem branch breast breath breathing bronchial bronchitis bronchoscopy bronchospasm bronchus bruise buffer bulimia burn burning bursa bursitis bypass
+        
+#             cachexia caesarean calcification calcium calculus caliber calorie cancer candidiasis cannula capacity capillary capsule carbohydrate carbon carcinogen carcinoma cardiac cardiomyopathy cardiopulmonary cardiovascular care caregiver caries carotid carpal cartilage case cast cataract catheter catheterization cauterization cavity cell cellular cellulitis center central cerebellar cerebellum cerebral cerebrospinal cerebrovascular cerebrum certification cervical cervix cessation chamber change channel characteristic charting check chemical chemotherapy chest childhood children chlamydia chloride cholecystectomy cholecystitis cholera cholesterol chronic circulation circulatory cirrhosis classification claudication clavicle clearance cleft client clinical clinic clitoris clone clonic closure clot clotting cluster coagulation cochlea code cognitive coil cold colic colitis collapse colon colonoscopy color colorectal colostomy colposcopy coma combination comfort common communicable communication community comparison compartment compensation complaint complement complete complex compliance complication component compound comprehensive compression computed concentration conception concussion condition condom conduction conductive congenital congestion congestive conjunctiva conjunctivitis connective conscious consciousness consent conservative consideration consolidation constant constipation constitutional constriction consultation consumption contact contagious contamination content context continence continuation continuous contour contraception contraceptive contractility contraction contracture contraindication contralateral contrast control controlled contusion conventional conversion convulsion coordination cope coping cord core cornea corneal coronary corpus correction correlation cortex cortical corticosteroid cortisol cosmetic costal cough counseling count course coverage crack crackle cramp cranial craniotomy craving creatine creatinine crepitus crisis criteria critical cross croup crown crucial cruciate crush crust crutch cryotherapy culture cumulative curative cure current curvature curve cushion custom cutaneous cutting cyanosis cycle cyclic cylinder cyst cystectomy cystic cystitis cystoscopy cytology cytomegalovirus cytoplasm cytotoxic
+        
+#             daily damage data database date dead deaf deafness death debridement debris decay decubitus deep defecation defect defense deficiency deficit definitive deformity degeneration degenerative dehydration delay delayed deletion delirium delivery delta deltoid delusion dementia demyelination dendrite denial dense density dental dentist dentition denture dependence dependent depersonalization depolarization deposit depression deprivation depth derivative dermal dermatitis dermatology dermis descending description desensitization design desire destruction detachment detail detection deterioration determination detoxification development developmental deviated deviation device diabetes diabetic diagnosis diagnostic dialysis diameter diaphoresis diaphragm diaphragmatic diarrhea diastole diastolic diet dietary differential differentiation diffuse diffusion digestion digestive digital dilatation dilation dilator dimension diminished dioxide diphtheria diplopia direct direction disability disabled disc discharge discipline discomfort disconnection discontinuation discrete discrimination disease disinfectant disinfection disk dislocation disorder disorganized disorientation displacement disposal disruption dissection disseminated dissociation distal distance distention distortion distress distribution disturbance diuresis diuretic diverticula diverticulitis diverticulosis diverticulum divided division dizziness doctor document documentation domain dome domestic dominant dominance donation donor dopamine doppler dormant dorsal dorsiflexion dorsum dosage dose double doubt douche down drain drainage drawing dream dressing drift drill drinking drip drive drooling drop droplet drug drunk dual duct ductus dull duodenal duodenum duplex duplicate dura durable duration dust duty dwarfism dying dynamic dysfunction dyslexia dysmenorrhea dyspareunia dyspepsia dysphagia dysphasia dysplasia dyspnea dysrhythmia dystocia dystonia dystrophy dysuria
+        
+#             ear early eating ecchymosis echocardiogram echocardiography eclampsia ectasia ectopic ectopy eczema edema edematous edge education effect effective effector efferent efficacy efficiency effort effusion eight elastic elasticity elbow elderly elective electric electrical electrocardiogram electrocardiography electrode electroencephalogram electroencephalography electrolyte electromyography electron electronic electrophysiology element elevation eligible elimination emaciation embolectomy embolism embolization embolus embryo embryonic emergency emesis emission emotion emotional empathy emphysema empiric empty empyema emulsification enable enamel encephalitis encephalopathy encoding encounter endemic endocarditis endocardium endocrine endocrinology endogenous endometrial endometriosis endometrium endorphin endoscope endoscopic endoscopy endothelial endothelium endotracheal endurance enema energy engagement engine enhancement enlargement enteral enteric enteritis enterocele enterocolitis enterostomy entrapment entry enucleation enuresis environment environmental enzyme eosinophil eosinophilia ependyma epicardium epicondyle epidemic epidemiology epidermal epidermis epidural epigastric epiglottis epilepsy epinephrine epiphyseal epiphysis episode episodic epispadias epistaxis epithelial epithelium equilibrium equipment equivalent erectile erection erosion error eruption erythema erythrocyte erythropoiesis erythropoietin escape eschar esophageal esophagitis esophagoscopy esophagus essential established ester estimate estrogen ether ethical ethics ethmoid etiology eupnea eustachian euthanasia evacuation evaluation evaporation evening event eversion evidence evoked exacerbation examination example excavation excess exchange excision excitation excitement excoriation excretion excursion exercise exertion exfoliation exhalation exhaustion exocrine exogenous exophthalmos exostosis exotoxin expansion expectancy expectant expectorant expectoration experience experiment experimental expiration expiratory explanation exploration exploratory explosion exposure expression extension extensive extensor extent external extracellular extracorporeal extraction extradural extraocular extrapyramidal extrasystole extrauterine extravasation extremity extrinsic exudate exudation eye eyeball eyelid
+        
+#             face facial facilitate facility factor failure fainting fall fallopian false familial family fascia fasciculation fasciotomy fasting fatal fatigue fatty faucial fauces febrile fecal feces feeding feet fellow female femoral femur fenestration ferritin fertile fertility fertilization fetal fetus fever fiber fibrillation fibrin fibrinogen fibroblast fibroid fibroma fibrosis fibrous fibula field fifth figure filament film filter filtration fimbria final finding fine finger first fissure fistula fitness five fixation flaccid flagellum flank flap flat flatulence flatus flexibility flexion flexor flexure flight floating floor flora flow fluctuation fluid fluorescence fluoride fluoroscopy flush flutter foam focal focus fold foley follicle follicular fontanelle food foot foramen force forceps forearm foreign foreskin form formation formula fornix fossa four fovea fraction fracture fragile fragment frank free freedom fremitus frequency frequent friction frontal frostbite frozen fructose full function functional fundus fungal fungus funnel fusion
+#             """
+        
+#             core_words = core_medical_vocab.split()
+#             corpus_words.extend(core_words * 20)  # Add core vocabulary with good frequency
+        
+#             # ============ PART 5: Build Final Corpus ============
+#             self.word_freq = Counter(corpus_words)
+#             self.vocabulary = set(self.word_freq.keys())
+        
+#             # Build bigrams for context checking
+#             st.info("Building bigram model...")
+#             for i in range(len(corpus_words) - 1):
+#                 if i < len(corpus_words) - 1:
+#                     self.bigrams[corpus_words[i]][corpus_words[i + 1]] += 1
+        
+#             # Store sample text for context
+#             self.corpus_text = ' '.join(corpus_words[:100000])
+        
+#             # Final statistics
+#             total_words = len(self.vocabulary)
+#             total_tokens = sum(self.word_freq.values())
+        
+#             st.success(f"""
+#             ✅ **Corpus Successfully Loaded!**
+#             - Unique medical terms: **{total_words:,}**
+#             - Total word tokens: **{total_tokens:,}**
+#             - Bigram pairs: **{len(self.bigrams):,}**
+#             - Sources: MTSamples + PubMed + Medical Dictionary
+#             """)
+        
+#             return True
+        
+#         except Exception as e:
+#             st.error(f"Error loading corpus: {e}")
+#             return False    
+    
+#     def levenshtein_distance(self, s1: str, s2: str) -> int:
+#         """Calculate minimum edit distance between two strings"""
+#         if len(s1) < len(s2):
+#             return self.levenshtein_distance(s2, s1)
+        
+#         if len(s2) == 0:
+#             return len(s1)
+        
+#         prev_row = range(len(s2) + 1)
+#         for i, c1 in enumerate(s1):
+#             curr_row = [i + 1]
+#             for j, c2 in enumerate(s2):
+#                 insertions = prev_row[j + 1] + 1
+#                 deletions = curr_row[j] + 1
+#                 substitutions = prev_row[j] + (c1 != c2)
+#                 curr_row.append(min(insertions, deletions, substitutions))
+#             prev_row = curr_row
+        
+#         return prev_row[-1]
+    
+#     def jaccard_similarity(self, s1: str, s2: str) -> float:
+#         """Calculate Jaccard similarity between two strings"""
+#         set1 = set(s1)
+#         set2 = set(s2)
+#         intersection = set1.intersection(set2)
+#         union = set1.union(set2)
+#         return len(intersection) / len(union) if union else 0
+    
+#     def get_candidates(self, word: str, max_distance: int = 2) -> List[Tuple[str, int, float]]:
+#         """Generate candidate corrections with edit distance and frequency score"""
+#         candidates = []
+#         word_lower = word.lower()
+        
+#         for vocab_word in self.vocabulary:
+#             distance = self.levenshtein_distance(word_lower, vocab_word)
+#             if distance <= max_distance:
+#                 freq_score = self.word_freq[vocab_word] / sum(self.word_freq.values())
+#                 jaccard_sim = self.jaccard_similarity(word_lower, vocab_word)
+#                 # Combined score: lower distance is better, higher frequency is better
+#                 combined_score = (1 / (distance + 1)) * freq_score * (jaccard_sim + 0.1)
+#                 candidates.append((vocab_word, distance, combined_score))
+        
+#         # Sort by combined score (descending)
+#         candidates.sort(key=lambda x: x[2], reverse=True)
+#         return candidates[:5]  # Return top 5 candidates
+    
+#     def check_bigram_probability(self, prev_word: str, word: str) -> float:
+#         """Check bigram probability for context-based correction"""
+#         if prev_word in self.bigrams:
+#             total = sum(self.bigrams[prev_word].values())
+#             if total > 0:
+#                 return self.bigrams[prev_word][word] / total
+#         return 0.0
+    
+#     def detect_real_word_errors(self, text: str) -> List[Tuple[str, int, List[str]]]:
+#         """Detect real-word errors using context (bigram analysis)"""
+#         words = text.lower().split()
+#         errors = []
+        
+#         for i in range(1, len(words)):
+#             prev_word = words[i-1]
+#             curr_word = words[i]
+            
+#             if curr_word in self.vocabulary:
+#                 # Check bigram probability
+#                 prob = self.check_bigram_probability(prev_word, curr_word)
+                
+#                 # If probability is very low, might be a real-word error
+#                 if prob < 0.001 and self.word_freq[curr_word] < 100:
+#                     # Find better alternatives based on context
+#                     alternatives = []
+#                     for alt_word in self.vocabulary:
+#                         if self.levenshtein_distance(curr_word, alt_word) <= 2:
+#                             alt_prob = self.check_bigram_probability(prev_word, alt_word)
+#                             if alt_prob > prob * 10:  # Significantly better probability
+#                                 alternatives.append((alt_word, alt_prob))
+                    
+#                     if alternatives:
+#                         alternatives.sort(key=lambda x: x[1], reverse=True)
+#                         errors.append((curr_word, i, [alt[0] for alt in alternatives[:3]]))
+        
+#         return errors
+    
+#     def cosine_similarity_check(self, text: str, suggestions: List[str]) -> List[Tuple[str, float]]:
+#         """Use cosine similarity to rank suggestions based on context"""
+#         if not suggestions:
+#             return []
+        
+#         try:
+#             # Create TF-IDF vectors
+#             vectorizer = TfidfVectorizer()
+#             all_texts = [text] + suggestions
+#             tfidf_matrix = vectorizer.fit_transform(all_texts)
+            
+#             # Calculate cosine similarity
+#             similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])
+            
+#             # Pair suggestions with similarities
+#             result = [(suggestions[i], similarities[0][i]) for i in range(len(suggestions))]
+#             result.sort(key=lambda x: x[1], reverse=True)
+#             return result
+#         except:
+#             return [(s, 0.0) for s in suggestions]
+
+# def create_gui():
+#     st.set_page_config(page_title="Advanced Medical Spelling Corrector", layout="wide")
+    
+#     # Initialize session state
+#     if 'corrector' not in st.session_state:
+#         st.session_state.corrector = SpellingCorrector()
+#         st.session_state.corpus_loaded = False
+    
+#     if 'selected_word' not in st.session_state:
+#         st.session_state.selected_word = None
+    
+#     st.title("🏥 Advanced Medical Spelling Correction System")
+#     st.markdown("---")
+    
+#     # Sidebar for corpus management
+#     with st.sidebar:
+#         st.header("📚 Corpus Management")
+        
+#         if not st.session_state.corpus_loaded:
+#             if st.button("Load Medical Corpus", type="primary", help="Load combined MTSamples + PubMed medical corpus"):
+#                 with st.spinner("Loading medical corpus..."):
+#                     if st.session_state.corrector.load_corpus():
+#                         st.session_state.corpus_loaded = True
+#                         st.success(f"Loaded {len(st.session_state.corrector.vocabulary)} unique medical terms!")
+#                         st.rerun()
+#         else:
+#             st.success(f"✓ Medical corpus loaded: {len(st.session_state.corrector.vocabulary)} words")
+            
+#             # Dictionary viewer
+#             st.header("📖 Medical Dictionary")
+            
+#             # Search functionality
+#             search_term = st.text_input("Search medical term:", key="search", placeholder="e.g., diabetes, anesthesia")
+            
+#             if search_term:
+#                 search_lower = search_term.lower()
+#                 if search_lower in st.session_state.corrector.vocabulary:
+#                     st.success(f"✓ '{search_term}' found in dictionary")
+#                     freq = st.session_state.corrector.word_freq.get(search_lower, 0)
+#                     st.info(f"Frequency: {freq}")
+#                 else:
+#                     st.warning(f"'{search_term}' not found")
+#                     # Show suggestions
+#                     candidates = st.session_state.corrector.get_candidates(search_term, max_distance=3)
+#                     if candidates:
+#                         st.write("Did you mean:")
+#                         for word, dist, score in candidates[:3]:
+#                             st.write(f"• {word}")
+            
+#             # Display vocabulary
+#             if st.checkbox("Browse all medical terms"):
+#                 sorted_words = sorted(list(st.session_state.corrector.vocabulary))
+                
+#                 # Filter options
+#                 filter_letter = st.selectbox("Filter by first letter:", 
+#                                             ["All"] + list(string.ascii_lowercase))
+                
+#                 if filter_letter != "All":
+#                     sorted_words = [w for w in sorted_words if w.startswith(filter_letter)]
+                
+#                 # Pagination
+#                 words_per_page = 100
+#                 total_pages = max(1, len(sorted_words) // words_per_page + 1)
+#                 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1)
+                
+#                 start_idx = (page - 1) * words_per_page
+#                 end_idx = min(start_idx + words_per_page, len(sorted_words))
+                
+#                 st.write(f"Showing words {start_idx+1} to {end_idx} of {len(sorted_words)}")
+                
+#                 # Display words in columns
+#                 cols = st.columns(4)
+#                 page_words = sorted_words[start_idx:end_idx]
+#                 for i, word in enumerate(page_words):
+#                     cols[i % 4].write(word)
+            
+#             # Word frequency stats
+#             if st.checkbox("Show top frequent medical terms"):
+#                 top_words = st.session_state.corrector.word_freq.most_common(30)
+#                 df = pd.DataFrame(top_words, columns=["Medical Term", "Frequency"])
+#                 st.dataframe(df, use_container_width=True)
+    
+#     # Main content area
+#     if st.session_state.corpus_loaded:
+#         col1, col2 = st.columns([1, 1])
+        
+#         with col1:
+#             st.header("✍️ Medical Text Editor")
+            
+#             # Add sample text button
+#             if st.button("Load Sample Medical Text"):
+#                 sample_text = "The patiant presented with symptms of diabetis including frequent urinaton and increased thrist. The docter prescribed insullin for better glucos control."
+#                 st.session_state.sample_text = sample_text
+            
+#             # Text input area (500 characters max)
+#             default_text = st.session_state.get('sample_text', '')
+#             user_text = st.text_area(
+#                 "Enter medical text (max 500 characters):",
+#                 value=default_text,
+#                 max_chars=500,
+#                 height=200,
+#                 placeholder="Type or paste medical text here...\nExample: The patient has hypertention and takes aspirn daily.",
+#                 key="text_input"
+#             )
+            
+#             # Check spelling button
+#             if st.button("🔍 Check Medical Spelling", type="primary"):
+#                 if user_text:
+#                     st.session_state.checking = True
+#                     st.session_state.text_to_check = user_text
+#                 else:
+#                     st.warning("Please enter some text to check.")
+        
+#         with col2:
+#             st.header("📊 Analysis Results")
+            
+#             if 'checking' in st.session_state and st.session_state.checking:
+#                 text = st.session_state.text_to_check
+#                 words = re.findall(r'\b[a-zA-Z]+\b', text)
+                
+#                 # Find non-word errors
+#                 non_word_errors = []
+#                 for word in words:
+#                     if word.lower() not in st.session_state.corrector.vocabulary:
+#                         candidates = st.session_state.corrector.get_candidates(word)
+#                         non_word_errors.append((word, candidates))
+                
+#                 # Find real-word errors
+#                 real_word_errors = st.session_state.corrector.detect_real_word_errors(text)
+                
+#                 # Display errors
+#                 if non_word_errors or real_word_errors:
+#                     st.subheader("❌ Medical Spelling Errors Found:")
+                    
+#                     # Non-word errors
+#                     if non_word_errors:
+#                         st.write("**Non-word errors (not in medical dictionary):**")
+#                         for error_word, candidates in non_word_errors:
+#                             with st.expander(f"🔴 '{error_word}' - Not in medical dictionary"):
+#                                 if candidates:
+#                                     st.write("**Medical term suggestions:**")
+#                                     for suggestion, distance, score in candidates:
+#                                         st.write(f"• **{suggestion}** (edit distance: {distance}, confidence: {score:.4f})")
+#                                 else:
+#                                     st.write("No suggestions found")
+                    
+#                     # Real-word errors
+#                     if real_word_errors:
+#                         st.write("**Potential context errors:**")
+#                         for error_word, position, alternatives in real_word_errors:
+#                             with st.expander(f"🟡 '{error_word}' - Possible medical context error"):
+#                                 st.write(f"Position: word #{position}")
+#                                 st.write("**Better medical alternatives based on context:**")
+#                                 for alt in alternatives:
+#                                     st.write(f"• {alt}")
+                    
+#                     # Highlighted text
+#                     st.subheader("📝 Highlighted Medical Text:")
+#                     highlighted_text = text
+#                     for error_word, _ in non_word_errors:
+#                         highlighted_text = highlighted_text.replace(
+#                             error_word, 
+#                             f"**:red[{error_word}]**"
+#                         )
+#                     for error_word, _, _ in real_word_errors:
+#                         highlighted_text = re.sub(
+#                             r'\b' + error_word + r'\b',
+#                             f"**:orange[{error_word}]**",
+#                             highlighted_text,
+#                             flags=re.IGNORECASE
+#                         )
+#                     st.markdown(highlighted_text)
+                    
+#                     # Legend
+#                     st.caption("🔴 Red: Non-medical word errors | 🟡 Orange: Medical context errors")
+#                 else:
+#                     st.success("✅ No medical spelling errors found!")
+                
+#                 st.session_state.checking = False
+#     else:
+#         st.info("👈 Please load the medical corpus from the sidebar to begin.")
+#         st.write("""
+#         **This system specializes in medical terminology and can detect:**
+#         - Misspelled medical terms (e.g., "diabetis" → "diabetes")
+#         - Incorrect drug names (e.g., "aspirn" → "aspirin")
+#         - Anatomical term errors (e.g., "stomache" → "stomach")
+#         - Medical procedure misspellings
+#         - Context-based medical errors
+#         """)
+    
+#     # Footer with techniques used
+#     st.markdown("---")
+#     with st.expander("ℹ️ NLP Techniques Used"):
+#         st.write("""
+#         **Similarity Metrics:**
+#         - **Levenshtein Distance**: Calculates minimum edit operations needed to transform one word to another
+#         - **Jaccard Similarity**: Measures character set overlap between words
+#         - **Cosine Similarity**: Uses TF-IDF vectors to measure contextual similarity
+        
+#         **Language Models:**
+#         - **Bigram Analysis**: Detects unlikely word pairs in medical context
+#         - **Frequency Analysis**: Ranks suggestions by their occurrence in medical literature
+        
+#         **Corpus Sources:**
+#         - MTSamples: Medical transcriptions from 40+ specialties
+#         - PubMed: Current medical research abstracts
+#         - Medical Dictionary: Comprehensive medical terminology database
+        
+#         **Scoring Algorithm:**
+#         ```
+#         score = (1/(edit_distance+1)) × frequency × (jaccard_similarity+0.1)
+#         ```
+#         """)
+
+# if __name__ == "__main__":
+#     create_gui()
+
+# import streamlit as st
+# import pandas as pd
+# import numpy as np
+# from collections import Counter, defaultdict
+# import re
+# import requests
+# from typing import List, Tuple, Dict
+# import nltk
+# from nltk.tokenize import word_tokenize
+# import string
+# from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.metrics.pairwise import cosine_similarity
+# import matplotlib.pyplot as plt
+
+# # Download required NLTK data
+# try:
+#     nltk.download('punkt', quiet=True)
+#     nltk.download('stopwords', quiet=True)
+# except:
+#     pass
+
+# class SpellingCorrector:
+#     def __init__(self):
+#         self.vocabulary = set()
+#         self.word_freq = Counter()
+#         self.bigrams = defaultdict(Counter)
+#         self.word_vectors = {}
+#         self.tfidf_vectorizer = None
+#         self.corpus_text = ""
+        
+#     def load_corpus(self):
+#         """Load comprehensive medical corpus from MTSamples + PubMed API"""
+#         try:
+#             import requests
+#             corpus_words = []
+        
+#             # ============ PART 1: Load MTSamples Dataset ============
+#             st.info("Loading medical transcriptions corpus...")
+#             mtsamples_loaded = False
+        
+#             try:
+#                 # First try to download MTSamples automatically from GitHub mirror
+#                 url = "https://raw.githubusercontent.com/chandelsman/Medical-Text-Classification/master/data/mtsamples.csv"
+#                 df = pd.read_csv(url)
+            
+#                 # Process medical transcriptions
+#                 for idx, row in df.iterrows():
+#                     # Get transcription text
+#                     if pd.notna(row.get('transcription', '')):
+#                         text = str(row['transcription']).lower()
+#                         words = re.findall(r'\b[a-z]+\b', text)
+#                         corpus_words.extend(words)
+                
+#                     # Add medical specialties
+#                     if pd.notna(row.get('medical_specialty', '')):
+#                         specialty = str(row['medical_specialty']).lower()
+#                         corpus_words.extend(specialty.replace('/', ' ').split())
+                
+#                     # Add keywords
+#                     if pd.notna(row.get('keywords', '')):
+#                         keywords = str(row['keywords']).lower()
+#                         corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                     # Add sample names (procedures)
+#                     if pd.notna(row.get('sample_name', '')):
+#                         sample = str(row['sample_name']).lower()
+#                         corpus_words.extend(sample.split())
+            
+#                 mtsamples_loaded = True
+#                 st.success(f"✓ Loaded MTSamples: {len(set(corpus_words))} unique terms")
+            
+#             except Exception as e1:
+#                 # If download fails, try local file
+#                 try:
+#                     df = pd.read_csv('mtsamples.csv')
+                
+#                     for idx, row in df.iterrows():
+#                         if pd.notna(row.get('transcription', '')):
+#                             text = str(row['transcription']).lower()
+#                             words = re.findall(r'\b[a-z]+\b', text)
+#                             corpus_words.extend(words)
+                    
+#                         if pd.notna(row.get('medical_specialty', '')):
+#                             specialty = str(row['medical_specialty']).lower()
+#                             corpus_words.extend(specialty.replace('/', ' ').split())
+                    
+#                         if pd.notna(row.get('keywords', '')):
+#                             keywords = str(row['keywords']).lower()
+#                             corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+#                     mtsamples_loaded = True
+#                     st.success(f"✓ Loaded local MTSamples: {len(set(corpus_words))} unique terms")
+                
+#                 except FileNotFoundError:
+#                     st.warning("MTSamples not found locally. Download from: https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions")
+#                     st.info("Continuing with PubMed data only...")
+        
+#             # ============ PART 2: Load PubMed Medical Literature ============
+#             st.info("Fetching medical literature from PubMed...")
+        
+#             base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+#             # Comprehensive medical search terms
+#             medical_topics = [
+#                 'clinical diagnosis', 'patient treatment', 'medical therapy',
+#                 'diabetes mellitus', 'hypertension management', 'cancer treatment',
+#                 'cardiovascular disease', 'infectious disease', 'neurological disorders',
+#                 'pediatric medicine', 'surgical procedures', 'pharmacology drugs',
+#                 'emergency medicine', 'internal medicine', 'psychiatry mental health',
+#                 'orthopedic surgery', 'obstetrics gynecology', 'radiology imaging',
+#                 'anesthesiology', 'pathology laboratory', 'dermatology skin',
+#                 'ophthalmology eye', 'otolaryngology ENT', 'urology kidney',
+#                 'gastroenterology digestive', 'endocrinology hormones', 'hematology blood',
+#                 'immunology allergy', 'nephrology renal', 'pulmonology respiratory',
+#                 'rheumatology arthritis', 'clinical trials', 'medical research'
+#             ]
+        
+#             # Progress bar for PubMed loading
+#             progress_bar = st.progress(0)
+#             pubmed_words = []
+        
+#             for idx, topic in enumerate(medical_topics):
+#                 try:
+#                     # Search for articles
+#                     search_url = f"{base_url}esearch.fcgi?db=pubmed&term={topic}&retmax=100&retmode=json"
+#                     search_response = requests.get(search_url, timeout=5)
+#                     search_data = search_response.json()
+                
+#                     # Get PMIDs
+#                     id_list = search_data.get('esearchresult', {}).get('idlist', [])[:50]
+                
+#                     if id_list:
+#                         # Fetch abstracts
+#                         ids_string = ','.join(id_list)
+#                         fetch_url = f"{base_url}efetch.fcgi?db=pubmed&id={ids_string}&rettype=abstract"
+#                         fetch_response = requests.get(fetch_url, timeout=10)
+                    
+#                         # Extract medical terms (3+ characters)
+#                         text = fetch_response.text.lower()
+#                         words = [w for w in re.findall(r'\b[a-z]+\b', text) if len(w) >= 3]
+#                         pubmed_words.extend(words)
+                
+#                     # Update progress
+#                     progress_bar.progress((idx + 1) / len(medical_topics))
+                
+#                 except Exception:
+#                     continue
+        
+#             progress_bar.empty()
+#             corpus_words.extend(pubmed_words)
+#             st.success(f"✓ Loaded PubMed: {len(set(pubmed_words))} unique terms")
+        
+#             # ============ PART 3: Add Medical Terminology Database ============
+#             st.info("Adding medical terminology database...")
+        
+#             # Download medical terms list
+#             try:
+#                 medical_terms_url = "https://raw.githubusercontent.com/glutanimate/wordlist-medicalterms-en/master/wordlist.txt"
+#                 response = requests.get(medical_terms_url)
+#                 medical_terms = response.text.lower().split('\n')
+#                 medical_terms = [term.strip() for term in medical_terms if term.strip() and len(term.strip()) >= 3]
+#                 corpus_words.extend(medical_terms * 10)  # Add with frequency weight
+#                 st.success(f"✓ Added {len(medical_terms)} medical dictionary terms")
+#             except:
+#                 pass
+        
+#             # ============ PART 4: Add Core Medical Vocabulary ============
+#             # Essential medical terms to ensure coverage
+#             core_medical_vocab = """
+#             abdominal abdomen abnormal abscess absorption accident acidosis acne acute adenoma adhesion adipose admission adrenal adult adverse airway albumin alcohol allergy alopecia alzheimer ambulance amino amnesia amniotic amputation analgesia analgesic anaphylaxis anastomosis anatomy anemia anesthesia aneurysm angina angiogram angioplasty ankle anomaly anorexia antacid anterior antibiotic antibody antidepressant antigen antihistamine antimicrobial antipsychotic antiseptic antiviral anxiety aorta aortic appendectomy appendicitis appendix appetite arrhythmia arterial arteriosclerosis artery arthritis arthroscopy articulation artificial ascites aseptic aspiration aspirin assessment asthma asymptomatic ataxia atherosclerosis atrial atrium atrophy attack audiometry auditory auscultation autism autoimmune autonomic autopsy axial axis axon
+        
+#             bacteria bacterial bacterium balance balloon bandage barium barrier basal baseline behavior benign beta bicarbonate bilateral bile biliary bilirubin biochemical biopsy bipolar birth bladder bleeding blind blood blurred body bone bowel brachial bradycardia brain brainstem branch breast breath breathing bronchial bronchitis bronchoscopy bronchospasm bronchus bruise buffer bulimia burn burning bursa bursitis bypass
+        
+#             cachexia caesarean calcification calcium calculus caliber calorie cancer candidiasis cannula capacity capillary capsule carbohydrate carbon carcinogen carcinoma cardiac cardiomyopathy cardiopulmonary cardiovascular care caregiver caries carotid carpal cartilage case cast cataract catheter catheterization cauterization cavity cell cellular cellulitis center central cerebellar cerebellum cerebral cerebrospinal cerebrovascular cerebrum certification cervical cervix cessation chamber change channel characteristic charting check chemical chemotherapy chest childhood children chlamydia chloride cholecystectomy cholecystitis cholera cholesterol chronic circulation circulatory cirrhosis classification claudication clavicle clearance cleft client clinical clinic clitoris clone clonic closure clot clotting cluster coagulation cochlea code cognitive coil cold colic colitis collapse colon colonoscopy color colorectal colostomy colposcopy coma combination comfort common communicable communication community comparison compartment compensation complaint complement complete complex compliance complication component compound comprehensive compression computed concentration conception concussion condition condom conduction conductive congenital congestion congestive conjunctiva conjunctivitis connective conscious consciousness consent conservative consideration consolidation constant constipation constitutional constriction consultation consumption contact contagious contamination content context continence continuation continuous contour contraception contraceptive contractility contraction contracture contraindication contralateral contrast control controlled contusion conventional conversion convulsion coordination cope coping cord core cornea corneal coronary corpus correction correlation cortex cortical corticosteroid cortisol cosmetic costal cough counseling count course coverage crack crackle cramp cranial craniotomy craving creatine creatinine crepitus crisis criteria critical cross croup crown crucial cruciate crush crust crutch cryotherapy culture cumulative curative cure current curvature curve cushion custom cutaneous cutting cyanosis cycle cyclic cylinder cyst cystectomy cystic cystitis cystoscopy cytology cytomegalovirus cytoplasm cytotoxic
+        
+#             daily damage data database date dead deaf deafness death debridement debris decay decubitus deep defecation defect defense deficiency deficit definitive deformity degeneration degenerative dehydration delay delayed deletion delirium delivery delta deltoid delusion dementia demyelination dendrite denial dense density dental dentist dentition denture dependence dependent depersonalization depolarization deposit depression deprivation depth derivative dermal dermatitis dermatology dermis descending description desensitization design desire destruction detachment detail detection deterioration determination detoxification development developmental deviated deviation device diabetes diabetic diagnosis diagnostic dialysis diameter diaphoresis diaphragm diaphragmatic diarrhea diastole diastolic diet dietary differential differentiation diffuse diffusion digestion digestive digital dilatation dilation dilator dimension diminished dioxide diphtheria diplopia direct direction disability disabled disc discharge discipline discomfort disconnection discontinuation discrete discrimination disease disinfectant disinfection disk dislocation disorder disorganized disorientation displacement disposal disruption dissection disseminated dissociation distal distance distention distortion distress distribution disturbance diuresis diuretic diverticula diverticulitis diverticulosis diverticulum divided division dizziness doctor document documentation domain dome domestic dominant dominance donation donor dopamine doppler dormant dorsal dorsiflexion dorsum dosage dose double doubt douche down drain drainage drawing dream dressing drift drill drinking drip drive drooling drop droplet drug drunk dual duct ductus dull duodenal duodenum duplex duplicate dura durable duration dust duty dwarfism dying dynamic dysfunction dyslexia dysmenorrhea dyspareunia dyspepsia dysphagia dysphasia dysplasia dyspnea dysrhythmia dystocia dystonia dystrophy dysuria
+        
+#             ear early eating ecchymosis echocardiogram echocardiography eclampsia ectasia ectopic ectopy eczema edema edematous edge education effect effective effector efferent efficacy efficiency effort effusion eight elastic elasticity elbow elderly elective electric electrical electrocardiogram electrocardiography electrode electroencephalogram electroencephalography electrolyte electromyography electron electronic electrophysiology element elevation eligible elimination emaciation embolectomy embolism embolization embolus embryo embryonic emergency emesis emission emotion emotional empathy emphysema empiric empty empyema emulsification enable enamel encephalitis encephalopathy encoding encounter endemic endocarditis endocardium endocrine endocrinology endogenous endometrial endometriosis endometrium endorphin endoscope endoscopic endoscopy endothelial endothelium endotracheal endurance enema energy engagement engine enhancement enlargement enteral enteric enteritis enterocele enterocolitis enterostomy entrapment entry enucleation enuresis environment environmental enzyme eosinophil eosinophilia ependyma epicardium epicondyle epidemic epidemiology epidermal epidermis epidural epigastric epiglottis epilepsy epinephrine epiphyseal epiphysis episode episodic epispadias epistaxis epithelial epithelium equilibrium equipment equivalent erectile erection erosion error eruption erythema erythrocyte erythropoiesis erythropoietin escape eschar esophageal esophagitis esophagoscopy esophagus essential established ester estimate estrogen ether ethical ethics ethmoid etiology eupnea eustachian euthanasia evacuation evaluation evaporation evening event eversion evidence evoked exacerbation examination example excavation excess exchange excision excitation excitement excoriation excretion excursion exercise exertion exfoliation exhalation exhaustion exocrine exogenous exophthalmos exostosis exotoxin expansion expectancy expectant expectorant expectoration experience experiment experimental expiration expiratory explanation exploration exploratory explosion exposure expression extension extensive extensor extent external extracellular extracorporeal extraction extradural extraocular extrapyramidal extrasystole extrauterine extravasation extremity extrinsic exudate exudation eye eyeball eyelid
+        
+#             face facial facilitate facility factor failure fainting fall fallopian false familial family fascia fasciculation fasciotomy fasting fatal fatigue fatty faucial fauces febrile fecal feces feeding feet fellow female femoral femur fenestration ferritin fertile fertility fertilization fetal fetus fever fiber fibrillation fibrin fibrinogen fibroblast fibroid fibroma fibrosis fibrous fibula field fifth figure filament film filter filtration fimbria final finding fine finger first fissure fistula fitness five fixation flaccid flagellum flank flap flat flatulence flatus flexibility flexion flexor flexure flight floating floor flora flow fluctuation fluid fluorescence fluoride fluoroscopy flush flutter foam focal focus fold foley follicle follicular fontanelle food foot foramen force forceps forearm foreign foreskin form formation formula fornix fossa four fovea fraction fracture fragile fragment frank free freedom fremitus frequency frequent friction frontal frostbite frozen fructose full function functional fundus fungal fungus funnel fusion
+#             """
+        
+#             core_words = core_medical_vocab.split()
+#             corpus_words.extend(core_words * 20)  # Add core vocabulary with good frequency
+        
+#             # ============ PART 5: Build Final Corpus ============
+#             self.word_freq = Counter(corpus_words)
+#             self.vocabulary = set(self.word_freq.keys())
+        
+#             # Build bigrams for context checking
+#             st.info("Building bigram model...")
+#             for i in range(len(corpus_words) - 1):
+#                 if i < len(corpus_words) - 1:
+#                     self.bigrams[corpus_words[i]][corpus_words[i + 1]] += 1
+        
+#             # Store sample text for context
+#             self.corpus_text = ' '.join(corpus_words[:100000])
+        
+#             # Final statistics
+#             total_words = len(self.vocabulary)
+#             total_tokens = sum(self.word_freq.values())
+        
+#             st.success(f"""
+#             ✅ **Corpus Successfully Loaded!**
+#             - Unique medical terms: **{total_words:,}**
+#             - Total word tokens: **{total_tokens:,}**
+#             - Bigram pairs: **{len(self.bigrams):,}**
+#             - Sources: MTSamples + PubMed + Medical Dictionary
+#             """)
+        
+#             return True
+        
+#         except Exception as e:
+#             st.error(f"Error loading corpus: {e}")
+#             return False    
+    
+#     def levenshtein_distance(self, s1: str, s2: str) -> int:
+#         """Calculate minimum edit distance between two strings"""
+#         if len(s1) < len(s2):
+#             return self.levenshtein_distance(s2, s1)
+        
+#         if len(s2) == 0:
+#             return len(s1)
+        
+#         prev_row = range(len(s2) + 1)
+#         for i, c1 in enumerate(s1):
+#             curr_row = [i + 1]
+#             for j, c2 in enumerate(s2):
+#                 insertions = prev_row[j + 1] + 1
+#                 deletions = curr_row[j] + 1
+#                 substitutions = prev_row[j] + (c1 != c2)
+#                 curr_row.append(min(insertions, deletions, substitutions))
+#             prev_row = curr_row
+        
+#         return prev_row[-1]
+    
+#     def jaccard_similarity(self, s1: str, s2: str) -> float:
+#         """Calculate Jaccard similarity between two strings"""
+#         set1 = set(s1)
+#         set2 = set(s2)
+#         intersection = set1.intersection(set2)
+#         union = set1.union(set2)
+#         return len(intersection) / len(union) if union else 0
+
+#     def get_candidates(self, word: str, max_distance: int = 2) -> List[Tuple[str, int, float]]:
+#         """Generate candidate corrections with edit distance and frequency score"""
+#         candidates = []
+#         word_lower = word.lower()
+        
+#         for vocab_word in self.vocabulary:
+#             distance = self.levenshtein_distance(word_lower, vocab_word)
+#             if distance <= max_distance:
+#                 freq_score = self.word_freq[vocab_word] / sum(self.word_freq.values())
+#                 jaccard_sim = self.jaccard_similarity(word_lower, vocab_word)
+#                 # Combined score: lower distance is better, higher frequency is better
+#                 combined_score = (1 / (distance + 1)) * freq_score * (jaccard_sim + 0.1)
+#                 candidates.append((vocab_word, distance, combined_score))
+        
+#         # Sort by combined score (descending)
+#         candidates.sort(key=lambda x: x[2], reverse=True)
+#         return candidates[:5]  # Return top 5 candidates
+
+#     def get_candidates_advanced(self, word: str, context: str = "", max_distance: int = 2) -> List[Tuple[str, Dict[str, float]]]:
+#         """
+#         Generate candidate corrections using ALL similarity methods:
+#         - Levenshtein Distance
+#         - Jaccard Similarity
+#         - Cosine Similarity (with context)
+#         - N-gram similarity
+#         - Bigram probability
+#         """
+#         candidates = []
+#         word_lower = word.lower()
+        
+#         # First, get candidates within edit distance threshold
+#         potential_candidates = []
+#         for vocab_word in self.vocabulary:
+#             distance = self.levenshtein_distance(word_lower, vocab_word)
+#             if distance <= max_distance:
+#                 potential_candidates.append((vocab_word, distance))
+        
+#         # Calculate all similarity metrics for each candidate
+#         for vocab_word, edit_distance in potential_candidates:
+#             metrics = {}
+            
+#             # 1. Levenshtein Distance (normalized)
+#             metrics['levenshtein'] = 1.0 / (edit_distance + 1)
+            
+#             # 2. Jaccard Similarity (character-level)
+#             metrics['jaccard'] = self.jaccard_similarity(word_lower, vocab_word)
+            
+#             # 3. Frequency Score
+#             metrics['frequency'] = self.word_freq[vocab_word] / sum(self.word_freq.values())
+            
+#             # 4. Cosine Similarity (if context provided)
+#             if context:
+#                 # Create context vectors
+#                 context_with_candidate = context.replace(word, vocab_word)
+#                 cos_sim = self.calculate_context_similarity(context, context_with_candidate)
+#                 metrics['cosine'] = cos_sim
+#             else:
+#                 metrics['cosine'] = 0.5  # neutral score if no context
+            
+#             # 5. N-gram character similarity (approximates phonetic similarity)
+#             metrics['ngram'] = self.ngram_similarity(word_lower, vocab_word)
+            
+#             # 6. Bigram context probability (if context available)
+#             if context:
+#                 words = context.lower().split()
+#                 word_idx = -1
+#                 for i, w in enumerate(words):
+#                     if w == word_lower:
+#                         word_idx = i
+#                         break
+                
+#                 if word_idx > 0:
+#                     prev_word = words[word_idx - 1]
+#                     metrics['bigram_prob'] = self.check_bigram_probability(prev_word, vocab_word)
+#                 else:
+#                     metrics['bigram_prob'] = 0.0
+#             else:
+#                 metrics['bigram_prob'] = 0.0
+            
+#             # Calculate combined score with weighted metrics
+#             combined_score = (
+#                 metrics['levenshtein'] * 0.25 +
+#                 metrics['jaccard'] * 0.20 +
+#                 metrics['frequency'] * 0.15 +
+#                 metrics['cosine'] * 0.15 +
+#                 metrics['ngram'] * 0.15 +
+#                 metrics['bigram_prob'] * 0.10
+#             )
+            
+#             metrics['combined_score'] = combined_score
+#             metrics['edit_distance'] = edit_distance
+            
+#             candidates.append((vocab_word, metrics))
+        
+#         # Sort by combined score
+#         candidates.sort(key=lambda x: x[1]['combined_score'], reverse=True)
+#         return candidates[:10]  # Return top 10 candidates
+
+#     def ngram_similarity(self, s1: str, s2: str, n: int = 2) -> float:
+#         """
+#         Calculate n-gram similarity between two strings
+#         Useful for detecting phonetically similar words
+#         """
+#         def get_ngrams(s, n):
+#             return set([s[i:i+n] for i in range(len(s)-n+1)])
+        
+#         if len(s1) < n or len(s2) < n:
+#             return 0.0
+        
+#         ngrams1 = get_ngrams(s1, n)
+#         ngrams2 = get_ngrams(s2, n)
+        
+#         if not ngrams1 or not ngrams2:
+#             return 0.0
+        
+#         intersection = ngrams1.intersection(ngrams2)
+#         union = ngrams1.union(ngrams2)
+        
+#         return len(intersection) / len(union) if union else 0.0
+
+#     def calculate_context_similarity(self, text1: str, text2: str) -> float:
+#         """
+#         Calculate cosine similarity between two text snippets using TF-IDF
+#         """
+#         try:
+#             vectorizer = TfidfVectorizer(max_features=100)
+#             tfidf_matrix = vectorizer.fit_transform([text1, text2])
+#             similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+#             return similarity
+#         except:
+#             return 0.5
+
+#     def generate_corrected_text(self, text: str, confidence_threshold: float = 0.3) -> Tuple[str, List[Dict]]:
+#         """
+#         Generate automatically corrected text using highest scoring suggestions
+        
+#         Args:
+#             text: Original text with errors
+#             confidence_threshold: Minimum combined score to accept a correction (0-1)
+        
+#         Returns:
+#             Tuple of (corrected_text, corrections_made)
+#         """
+#         corrected_text = text
+#         corrections_made = []
+#         words = re.findall(r'\b[a-zA-Z]+\b', text)
+        
+#         # Track word positions for accurate replacement
+#         word_positions = []
+#         current_pos = 0
+#         for word in words:
+#             start = text.lower().find(word.lower(), current_pos)
+#             if start != -1:
+#                 word_positions.append((word, start, start + len(word)))
+#                 current_pos = start + len(word)
+        
+#         # Process non-word errors
+#         for word in words:
+#             if word.lower() not in self.vocabulary:
+#                 # Get advanced candidates with all metrics
+#                 candidates = self.get_candidates_advanced(word, context=text)
+                
+#                 if candidates and len(candidates) > 0:
+#                     best_candidate = candidates[0]
+#                     best_word = best_candidate[0]
+#                     best_score = best_candidate[1]['combined_score']
+                    
+#                     # Only correct if confidence is above threshold
+#                     if best_score >= confidence_threshold:
+#                         # Replace all occurrences of the error word (case-insensitive)
+#                         pattern = re.compile(re.escape(word), re.IGNORECASE)
+#                         corrected_text = pattern.sub(best_word, corrected_text)
+                        
+#                         corrections_made.append({
+#                             'original': word,
+#                             'correction': best_word,
+#                             'confidence': best_score,
+#                             'edit_distance': best_candidate[1]['jaccard'],
+#                             'type': 'non-word'
+#                         })
+        
+#         # Process real-word errors (context-based)
+#         real_word_errors = self.detect_real_word_errors_comprehensive(text)
+#         for error_word, position, alternatives in real_word_errors:
+#             if alternatives:
+#                 best_alternative = alternatives[0]
+                
+#                 # Calculate confidence for real-word correction
+#                 # Get metrics for the suggested alternative
+#                 candidates = self.get_candidates_advanced(error_word, context=text)
+#                 confidence = 0.5  # Default confidence for context errors
+                
+#                 for candidate_word, metrics in candidates:
+#                     if candidate_word == best_alternative:
+#                         confidence = metrics['combined_score']
+#                         break
+                
+#                 if confidence >= confidence_threshold * 0.8:  # Slightly lower threshold for context errors
+#                     # Replace the specific occurrence based on position
+#                     words_in_text = corrected_text.split()
+#                     if position < len(words_in_text):
+#                         words_in_text[position] = best_alternative
+#                         corrected_text = ' '.join(words_in_text)
+                        
+#                         corrections_made.append({
+#                             'original': error_word,
+#                             'correction': best_alternative,
+#                             'confidence': confidence,
+#                             'position': position,
+#                             'type': 'context'
+#                         })
+        
+#         return corrected_text, corrections_made
+    
+#     def check_bigram_probability(self, prev_word: str, word: str) -> float:
+#         """Check bigram probability for context-based correction"""
+#         if prev_word in self.bigrams:
+#             total = sum(self.bigrams[prev_word].values())
+#             if total > 0:
+#                 return self.bigrams[prev_word][word] / total
+#         return 0.0
+    
+#     def detect_real_word_errors_improved(self, text: str) -> List[Tuple[str, int, List[str]]]:
+#         """
+#         Improved real-word error detection using multiple context methods
+#         """
+#         words = text.lower().split()
+#         errors = []
+        
+#         for i in range(len(words)):
+#             curr_word = words[i]
+            
+#             # Only check words that exist in vocabulary
+#             if curr_word not in self.vocabulary:
+#                 continue
+                
+#             # Method 1: Bigram probability check (with relaxed thresholds)
+#             bigram_suspicious = False
+#             if i > 0:
+#                 prev_word = words[i-1]
+#                 bigram_prob = self.check_bigram_probability(prev_word, curr_word)
+                
+#                 # More relaxed thresholds
+#                 if bigram_prob < 0.01 and self.word_freq[curr_word] < 1000:
+#                     bigram_suspicious = True
+            
+#             # Method 2: Frequency-based suspicion
+#             freq_suspicious = False
+#             if self.word_freq[curr_word] < 50:  # Very rare words might be errors
+#                 freq_suspicious = True
+            
+#             # Method 3: Context similarity check
+#             context_suspicious = False
+#             if len(words) > 2:  # Need sufficient context
+#                 # Create context without the suspicious word
+#                 context_without_word = ' '.join(words[:i] + [''] + words[i+1:])
+                
+#                 # Find similar words and check if they fit better
+#                 candidates = self.get_candidates(curr_word, max_distance=1)
+#                 for candidate_word, _, _ in candidates[:3]:
+#                     context_with_candidate = ' '.join(words[:i] + [candidate_word] + words[i+1:])
+                    
+#                     # Check if candidate fits better contextually
+#                     try:
+#                         original_sim = self.calculate_context_similarity(text, text)  # baseline
+#                         candidate_sim = self.calculate_context_similarity(text, context_with_candidate)
+                        
+#                         if candidate_sim > original_sim * 1.1:  # 10% improvement
+#                             context_suspicious = True
+#                             break
+#                     except:
+#                         pass
+            
+#             # Method 4: Medical domain specific checks
+#             medical_suspicious = False
+#             if i > 0 and i < len(words) - 1:
+#                 prev_word = words[i-1]
+#                 next_word = words[i+1]
+                
+#                 # Check for common medical patterns
+#                 medical_patterns = {
+#                     'patient': ['has', 'was', 'is', 'presented', 'complained', 'suffered'],
+#                     'diagnosis': ['of', 'is', 'was', 'includes', 'shows'],
+#                     'treatment': ['for', 'of', 'includes', 'with', 'using'],
+#                     'symptoms': ['of', 'include', 'are', 'were', 'such'],
+#                 }
+                
+#                 for pattern_word, expected_next in medical_patterns.items():
+#                     if prev_word == pattern_word and curr_word not in expected_next:
+#                         # Check if current word could be a misspelling of expected words
+#                         for expected in expected_next:
+#                             if self.levenshtein_distance(curr_word, expected) <= 2:
+#                                 medical_suspicious = True
+#                                 break
+            
+#             # Combine suspicion signals
+#             if bigram_suspicious or (freq_suspicious and context_suspicious) or medical_suspicious:
+#                 # Find better alternatives
+#                 alternatives = []
+                
+#                 # Get candidates with better context fit
+#                 candidates = self.get_candidates_advanced(curr_word, context=text, max_distance=2)
+                
+#                 for candidate_word, metrics in candidates[:5]:
+#                     # Check if candidate has better bigram probability
+#                     better_bigram = False
+#                     if i > 0:
+#                         prev_word = words[i-1]
+#                         candidate_bigram_prob = self.check_bigram_probability(prev_word, candidate_word)
+#                         original_bigram_prob = self.check_bigram_probability(prev_word, curr_word)
+                        
+#                         if candidate_bigram_prob > original_bigram_prob * 2:  # Significantly better
+#                             better_bigram = True
+                    
+#                     # Check frequency advantage
+#                     better_frequency = self.word_freq[candidate_word] > self.word_freq[curr_word] * 2
+                    
+#                     # Check overall metrics
+#                     good_metrics = metrics['combined_score'] > 0.3
+                    
+#                     if better_bigram or better_frequency or good_metrics:
+#                         confidence_score = (
+#                             metrics['combined_score'] * 0.4 +
+#                             (candidate_bigram_prob if i > 0 else 0.5) * 0.3 +
+#                             (self.word_freq[candidate_word] / sum(self.word_freq.values())) * 1000 * 0.3
+#                         )
+#                         alternatives.append((candidate_word, confidence_score))
+                
+#                 # Sort alternatives by confidence
+#                 alternatives.sort(key=lambda x: x[1], reverse=True)
+                
+#                 if alternatives:
+#                     errors.append((curr_word, i, [alt[0] for alt in alternatives[:3]]))
+        
+#         return errors
+
+#     def check_bigram_probability_smoothed(self, prev_word: str, word: str) -> float:
+#         """
+#         Improved bigram probability with smoothing for sparse data
+#         """
+#         if prev_word in self.bigrams:
+#             total = sum(self.bigrams[prev_word].values())
+#             if total > 0:
+#                 count = self.bigrams[prev_word][word]
+#                 # Add-one smoothing to handle unseen bigrams
+#                 smoothed_prob = (count + 1) / (total + len(self.vocabulary))
+#                 return smoothed_prob
+        
+#         # Return small but non-zero probability for unseen bigrams
+#         return 1 / (len(self.vocabulary) + 1)
+
+#     def detect_medical_context_errors(self, text: str) -> List[Tuple[str, int, List[str]]]:
+#         """
+#         Medical domain-specific context error detection
+#         """
+#         words = text.lower().split()
+#         errors = []
+        
+#         # Define medical context patterns
+#         medical_contexts = {
+#             'symptoms': {
+#                 'preceding': ['patient', 'symptoms', 'complaint', 'presenting'],
+#                 'following': ['include', 'are', 'were', 'of', 'such', 'like'],
+#                 'common_errors': {
+#                     'pain': ['pan', 'pian', 'payn'],
+#                     'nausea': ['nasea', 'nausua', 'nausia'],
+#                     'fever': ['fver', 'fevr', 'feber'],
+#                     'fatigue': ['fatigue', 'fatige', 'fatique']
+#                 }
+#             },
+#             'treatments': {
+#                 'preceding': ['prescribed', 'treatment', 'therapy', 'medication'],
+#                 'following': ['for', 'to', 'with', 'of', 'including'],
+#                 'common_errors': {
+#                     'aspirin': ['aspirn', 'asprin', 'aspiran'],
+#                     'insulin': ['insullin', 'insuln', 'inslin'],
+#                     'antibiotic': ['antibiotic', 'antibotic', 'antibiutic']
+#                 }
+#             },
+#             'anatomy': {
+#                 'preceding': ['in', 'the', 'patient', 'examination'],
+#                 'following': ['shows', 'reveals', 'indicates', 'is', 'was'],
+#                 'common_errors': {
+#                     'abdomen': ['abdomen', 'abdomin', 'abdoman'],
+#                     'thorax': ['thorax', 'thoracs', 'thorex'],
+#                     'extremities': ['extremitis', 'extremeties', 'extrimities']
+#                 }
+#             }
+#         }
+        
+#         for i, word in enumerate(words):
+#             if word in self.vocabulary:
+#                 # Check each medical context
+#                 for context_type, patterns in medical_contexts.items():
+#                     # Check if word appears in medical context
+#                     context_match = False
+                    
+#                     # Check preceding context
+#                     if i > 0 and words[i-1] in patterns['preceding']:
+#                         context_match = True
+                    
+#                     # Check following context
+#                     if i < len(words) - 1 and words[i+1] in patterns['following']:
+#                         context_match = True
+                    
+#                     if context_match:
+#                         # Check against common medical errors
+#                         for correct_word, error_variants in patterns['common_errors'].items():
+#                             if word in error_variants and word != correct_word:
+#                                 errors.append((word, i, [correct_word]))
+#                             elif self.levenshtein_distance(word, correct_word) <= 2:
+#                                 # Potential error if very similar to common medical term
+#                                 if self.word_freq[correct_word] > self.word_freq[word] * 5:
+#                                     errors.append((word, i, [correct_word]))
+        
+#         return errors
+
+#     # Enhanced main detection method that combines all approaches
+#     def detect_real_word_errors_comprehensive(self, text: str) -> List[Tuple[str, int, List[str]]]:
+#         """
+#         Comprehensive real-word error detection combining multiple methods
+#         """
+#         # Get errors from different methods
+#         bigram_errors = self.detect_real_word_errors_improved(text)
+#         medical_errors = self.detect_medical_context_errors(text)
+        
+#         # Combine and deduplicate errors
+#         all_errors = {}
+        
+#         # Add bigram-based errors
+#         for word, position, alternatives in bigram_errors:
+#             key = (word, position)
+#             if key not in all_errors:
+#                 all_errors[key] = set(alternatives)
+#             else:
+#                 all_errors[key].update(alternatives)
+        
+#         # Add medical context errors
+#         for word, position, alternatives in medical_errors:
+#             key = (word, position)
+#             if key not in all_errors:
+#                 all_errors[key] = set(alternatives)
+#             else:
+#                 all_errors[key].update(alternatives)
+        
+#         # Convert back to list format
+#         final_errors = []
+#         for (word, position), alternatives in all_errors.items():
+#             final_errors.append((word, position, list(alternatives)[:3]))  # Limit to top 3
+        
+#         return final_errors
+
+# def create_gui():
+#     st.set_page_config(page_title="Advanced Medical Spelling Corrector", layout="wide")
+    
+#     # Initialize session state
+#     if 'corrector' not in st.session_state:
+#         st.session_state.corrector = SpellingCorrector()
+#         st.session_state.corpus_loaded = False
+    
+#     if 'selected_word' not in st.session_state:
+#         st.session_state.selected_word = None
+    
+#     st.title("🏥 Advanced Medical Spelling Correction System")
+#     st.markdown("---")
+    
+#     # Sidebar for corpus management
+#     with st.sidebar:
+#         st.header("📚 Corpus Management")
+        
+#         if not st.session_state.corpus_loaded:
+#             if st.button("Load Medical Corpus", type="primary", help="Load combined MTSamples + PubMed medical corpus"):
+#                 with st.spinner("Loading medical corpus..."):
+#                     if st.session_state.corrector.load_corpus():
+#                         st.session_state.corpus_loaded = True
+#                         st.success(f"Loaded {len(st.session_state.corrector.vocabulary)} unique medical terms!")
+#                         st.rerun()
+#         else:
+#             st.success(f"✓ Medical corpus loaded: {len(st.session_state.corrector.vocabulary)} words")
+            
+#             # Dictionary viewer
+#             st.header("📖 Medical Dictionary")
+            
+#             # Search functionality
+#             search_term = st.text_input("Search medical term:", key="search", placeholder="e.g., diabetes, anesthesia")
+            
+#             if search_term:
+#                 search_lower = search_term.lower()
+#                 if search_lower in st.session_state.corrector.vocabulary:
+#                     st.success(f"✓ '{search_term}' found in dictionary")
+#                     freq = st.session_state.corrector.word_freq.get(search_lower, 0)
+#                     st.info(f"Frequency: {freq}")
+#                 else:
+#                     st.warning(f"'{search_term}' not found")
+#                     # Show suggestions
+#                     candidates = st.session_state.corrector.get_candidates(search_term, max_distance=3)
+#                     if candidates:
+#                         st.write("Did you mean:")
+#                         for word, dist, score in candidates[:3]:
+#                             st.write(f"• {word}")
+            
+#             # Display vocabulary
+#             if st.checkbox("Browse all medical terms"):
+#                 sorted_words = sorted(list(st.session_state.corrector.vocabulary))
+                
+#                 # Filter options
+#                 filter_letter = st.selectbox("Filter by first letter:", 
+#                                             ["All"] + list(string.ascii_lowercase))
+                
+#                 if filter_letter != "All":
+#                     sorted_words = [w for w in sorted_words if w.startswith(filter_letter)]
+                
+#                 # Pagination
+#                 words_per_page = 100
+#                 total_pages = max(1, len(sorted_words) // words_per_page + 1)
+#                 page = st.number_input("Page", min_value=1, max_value=total_pages, value=1)
+                
+#                 start_idx = (page - 1) * words_per_page
+#                 end_idx = min(start_idx + words_per_page, len(sorted_words))
+                
+#                 st.write(f"Showing words {start_idx+1} to {end_idx} of {len(sorted_words)}")
+                
+#                 # Display words in columns
+#                 cols = st.columns(4)
+#                 page_words = sorted_words[start_idx:end_idx]
+#                 for i, word in enumerate(page_words):
+#                     cols[i % 4].write(word)
+            
+#             # Word frequency stats
+#             if st.checkbox("Show top frequent medical terms"):
+#                 top_words = st.session_state.corrector.word_freq.most_common(30)
+#                 df = pd.DataFrame(top_words, columns=["Medical Term", "Frequency"])
+#                 st.dataframe(df, use_container_width=True)
+    
+#     # Main content area
+#     if st.session_state.corpus_loaded:
+#         col1, col2 = st.columns([1, 1])
+        
+#         with col1:
+#             st.header("✍️ Medical Text Editor")
+            
+#             # Add sample text button
+#             if st.button("Load Sample Medical Text"):
+#                 sample_text = "The patiant presented with symptms of diabetis including frequent urinaton and increased thrist. The docter prescribed insullin for better glucos control."
+#                 st.session_state.sample_text = sample_text
+            
+#             # Text input area (500 characters max)
+#             default_text = st.session_state.get('sample_text', '')
+#             user_text = st.text_area(
+#                 "Enter medical text (max 500 characters):",
+#                 value=default_text,
+#                 max_chars=500,
+#                 height=200,
+#                 placeholder="Type or paste medical text here...\nExample: The patient has hypertention and takes aspirn daily.",
+#                 key="text_input"
+#             )
+            
+#             # Check spelling button
+#             if st.button("🔍 Check Medical Spelling", type="primary"):
+#                 if user_text:
+#                     st.session_state.checking = True
+#                     st.session_state.text_to_check = user_text
+#                 else:
+#                     st.warning("Please enter some text to check.")
+        
+#         with col2:
+#             st.header("📊 Analysis Results")
+            
+#             if 'checking' in st.session_state and st.session_state.checking:
+#                 text = st.session_state.text_to_check
+#                 words = re.findall(r'\b[a-zA-Z]+\b', text)
+                
+#                 # Define full_context here
+#                 full_context = st.session_state.text_to_check
+                
+#                 # Find non-word errors
+#                 non_word_errors = []
+#                 for word in words:
+#                     if word.lower() not in st.session_state.corrector.vocabulary:
+#                         # Use get_candidates_advanced with context
+#                         candidates = st.session_state.corrector.get_candidates_advanced(word, context=full_context)
+#                         non_word_errors.append((word, candidates))
+                
+#                 # Find real-word errors
+#                 real_word_errors = st.session_state.corrector.detect_real_word_errors_comprehensive(text)
+                
+#                 # Display errors
+#                 if non_word_errors or real_word_errors:
+#                     st.subheader("❌ Medical Spelling Errors Found:")
+                    
+#                     # Non-word errors
+#                     if non_word_errors:
+#                         st.write("**Non-word errors (not in medical dictionary):**")
+#                         for error_word, advanced_candidates in non_word_errors:
+#                             with st.expander(f"🔴 '{error_word}' - Not in medical dictionary"):
+#                                 if advanced_candidates:
+#                                     st.write("**Medical term suggestions with detailed metrics:**")
+                                    
+#                                     # Create a DataFrame for better visualization
+#                                     suggestions_data = []
+#                                     for suggestion, metrics in advanced_candidates[:5]:
+#                                         suggestions_data.append({
+#                                             'Suggestion': suggestion,
+#                                             'Edit Dist': metrics['edit_distance'],
+#                                             'Levenshtein': f"{metrics['levenshtein']:.2f}",
+#                                             'Jaccard': f"{metrics['jaccard']:.2f}",
+#                                             'N-gram': f"{metrics['ngram']:.2f}",
+#                                             'Cosine': f"{metrics['cosine']:.2f}",
+#                                             'Frequency': f"{metrics['frequency']*1000:.3f}",
+#                                             'Bigram': f"{metrics['bigram_prob']*100:.2f}%",
+#                                             'Combined': f"{metrics['combined_score']:.3f}"
+#                                         })
+                                    
+#                                     df_suggestions = pd.DataFrame(suggestions_data)
+#                                     st.dataframe(df_suggestions, use_container_width=True)
+                                    
+#                                     # Show the best suggestion prominently
+#                                     best_suggestion = advanced_candidates[0][0]
+#                                     best_score = advanced_candidates[0][1]['combined_score']
+#                                     st.success(f"**Best suggestion: '{best_suggestion}' (confidence: {best_score:.2%})**")
+                                    
+#                                     # Explain the metrics
+#                                     with st.expander("📊 Metric Explanations"):
+#                                         st.write("""
+#                                         - **Edit Distance**: Number of character changes needed
+#                                         - **Levenshtein**: Normalized edit distance (higher is better)
+#                                         - **Jaccard**: Character set overlap (0-1)
+#                                         - **N-gram**: Character sequence similarity (phonetic)
+#                                         - **Cosine**: Context-based similarity using TF-IDF
+#                                         - **Frequency**: How common the word is in medical texts
+#                                         - **Bigram**: Probability based on surrounding words
+#                                         - **Combined**: Weighted average of all metrics
+#                                         """)
+#                                 else:
+#                                     st.write("No suggestions found")
+                    
+#                     # Real-word errors
+#                     if real_word_errors:
+#                         st.write("**Potential context errors:**")
+#                         for error_word, position, alternatives in real_word_errors:
+#                             with st.expander(f"🟡 '{error_word}' - Possible medical context error"):
+#                                 st.write(f"Position: word #{position}")
+#                                 st.write("**Better medical alternatives based on context:**")
+#                                 for alt in alternatives:
+#                                     st.write(f"• {alt}")
+                    
+#                     # Highlighted text
+#                     st.subheader("📝 Highlighted Medical Text:")
+#                     highlighted_text = text
+#                     for error_word, _ in non_word_errors:
+#                         highlighted_text = highlighted_text.replace(
+#                             error_word, 
+#                             f"**:red[{error_word}]**"
+#                         )
+#                     for error_word, _, _ in real_word_errors:
+#                         highlighted_text = re.sub(
+#                             r'\b' + error_word + r'\b',
+#                             f"**:orange[{error_word}]**",
+#                             highlighted_text,
+#                             flags=re.IGNORECASE
+#                         )
+#                     st.markdown(highlighted_text)
+                    
+#                     # Auto-corrected text section
+#                     st.subheader("✨ Auto-Corrected Text:")
+                    
+#                     # Add confidence threshold slider
+#                     confidence_threshold = st.slider(
+#                         "Correction Confidence Threshold:",
+#                         min_value=0.1,
+#                         max_value=0.9,
+#                         value=0.3,
+#                         step=0.1,
+#                         help="Higher values = only very confident corrections"
+#                     )
+                    
+#                     # Generate corrected text
+#                     corrected_text, corrections_made = st.session_state.corrector.generate_corrected_text(
+#                         text, 
+#                         confidence_threshold=confidence_threshold
+#                     )
+                    
+#                     # Display corrected text in a nice format
+#                     st.info(corrected_text)
+                    
+#                     # Show corrections made
+#                     if corrections_made:
+#                         with st.expander(f"📝 {len(corrections_made)} Corrections Made"):
+#                             corrections_df = pd.DataFrame(corrections_made)
+                            
+#                             # Format the dataframe for better display
+#                             if 'confidence' in corrections_df.columns:
+#                                 corrections_df['confidence'] = corrections_df['confidence'].apply(lambda x: f"{x:.2%}")
+                            
+#                             # Reorder columns for better readability
+#                             column_order = ['original', 'correction', 'confidence', 'type']
+#                             if 'edit_distance' in corrections_df.columns:
+#                                 column_order.append('edit_distance')
+#                             if 'position' in corrections_df.columns:
+#                                 column_order.append('position')
+                            
+#                             corrections_df = corrections_df[column_order]
+#                             st.dataframe(corrections_df, use_container_width=True)
+                            
+#                             # Summary statistics
+#                             st.write("**Correction Summary:**")
+#                             col1, col2, col3 = st.columns(3)
+#                             with col1:
+#                                 st.metric("Total Corrections", len(corrections_made))
+#                             with col2:
+#                                 non_word_count = sum(1 for c in corrections_made if c['type'] == 'non-word')
+#                                 st.metric("Non-word Errors", non_word_count)
+#                             with col3:
+#                                 context_count = sum(1 for c in corrections_made if c['type'] == 'context')
+#                                 st.metric("Context Errors", context_count)
+                    
+#                     # Copy button for corrected text
+#                     if st.button("📋 Copy Corrected Text"):
+#                         st.code(corrected_text, language=None)
+#                         st.success("Text ready to copy!")
+                    
+#                     # Side-by-side comparison
+#                     if st.checkbox("Show Side-by-Side Comparison"):
+#                         col1, col2 = st.columns(2)
+#                         with col1:
+#                             st.write("**Original Text:**")
+#                             st.text_area("Original", text, height=150, disabled=True)
+#                         with col2:
+#                             st.write("**Corrected Text:**")
+#                             st.text_area("Corrected", corrected_text, height=150, disabled=True)
+                    
+#                     # Legend
+#                     st.caption("🔴 Red: Non-medical word errors | 🟡 Orange: Medical context errors")
+                    
+#                     # Add comparison view for multiple methods
+#                     if non_word_errors:  # Only show if there are errors to compare
+#                         if st.checkbox("Show Method Comparison"):
+#                             st.subheader("🔬 Method Comparison Analysis")
+                            
+#                             # Compare different methods for the same error
+#                             comparison_data = []
+                            
+#                             for error_word, candidates in non_word_errors[:3]:  # Show first 3 errors
+#                                 if candidates and len(candidates) > 0:
+#                                     best_by_method = {
+#                                         'Error Word': error_word,
+#                                         'Levenshtein Best': '',
+#                                         'Jaccard Best': '',
+#                                         'N-gram Best': '',
+#                                         'Cosine Best': '',
+#                                         'Frequency Best': '',
+#                                         'Combined Best': candidates[0][0] if candidates else ''
+#                                     }
+                                    
+#                                     # Find best suggestion by each method
+#                                     if candidates:
+#                                         lev_sorted = sorted(candidates, key=lambda x: x[1]['levenshtein'], reverse=True)
+#                                         jac_sorted = sorted(candidates, key=lambda x: x[1]['jaccard'], reverse=True)
+#                                         ngram_sorted = sorted(candidates, key=lambda x: x[1]['ngram'], reverse=True)
+#                                         cos_sorted = sorted(candidates, key=lambda x: x[1]['cosine'], reverse=True)
+#                                         freq_sorted = sorted(candidates, key=lambda x: x[1]['frequency'], reverse=True)
+                                        
+#                                         best_by_method['Levenshtein Best'] = lev_sorted[0][0] if lev_sorted else ''
+#                                         best_by_method['Jaccard Best'] = jac_sorted[0][0] if jac_sorted else ''
+#                                         best_by_method['N-gram Best'] = ngram_sorted[0][0] if ngram_sorted else ''
+#                                         best_by_method['Cosine Best'] = cos_sorted[0][0] if cos_sorted else ''
+#                                         best_by_method['Frequency Best'] = freq_sorted[0][0] if freq_sorted else ''
+                                        
+#                                         comparison_data.append(best_by_method)
+                            
+#                             if comparison_data:
+#                                 df_comparison = pd.DataFrame(comparison_data)
+#                                 st.dataframe(df_comparison, use_container_width=True)
+#                                 st.caption("This shows how different methods might suggest different corrections")
+                                
+#                                 # Show scoring weights
+#                                 st.info("""
+#                                 **Scoring Weights Used:**
+#                                 - Levenshtein: 25%
+#                                 - Jaccard: 20%
+#                                 - N-gram: 15%
+#                                 - Cosine: 15%
+#                                 - Frequency: 15%
+#                                 - Bigram: 10%
+#                                 """)
+#                             else:
+#                                 st.write("No comparison data available")
+                        
+#                         # Add visualization of similarity scores
+#                         if st.checkbox("Visualize Similarity Scores"):
+#                             st.subheader("📈 Similarity Score Visualization")
+                            
+#                             # Check if we have errors to visualize
+#                             if non_word_errors:
+#                                 # Let user select which error to visualize
+#                                 error_words = [error_word for error_word, _ in non_word_errors]
+#                                 selected_error = st.selectbox("Select error word to visualize:", error_words)
+                                
+#                                 # Find the candidates for selected error
+#                                 selected_candidates = None
+#                                 for error_word, candidates in non_word_errors:
+#                                     if error_word == selected_error:
+#                                         selected_candidates = candidates
+#                                         break
+                                
+#                                 if selected_candidates and len(selected_candidates) >= 3:
+#                                     try:
+#                                         fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+#                                         fig.suptitle(f'Similarity Metrics for "{selected_error}"', fontsize=16)
+                                        
+#                                         # Get top 5 suggestions
+#                                         top_5_candidates = selected_candidates[:5]
+#                                         top_suggestions = [c[0] for c in top_5_candidates]
+                                        
+#                                         # Plot each metric
+#                                         metrics_to_plot = ['levenshtein', 'jaccard', 'ngram', 'cosine', 'frequency', 'combined_score']
+#                                         metric_labels = ['Levenshtein', 'Jaccard', 'N-gram', 'Cosine', 'Frequency', 'Combined Score']
+                                        
+#                                         for idx, (metric, label) in enumerate(zip(metrics_to_plot, metric_labels)):
+#                                             ax = axes[idx // 3, idx % 3]
+#                                             values = [c[1][metric] for c in top_5_candidates]
+                                            
+#                                             # Create bar chart
+#                                             bars = ax.bar(range(len(values)), values, color='steelblue')
+                                            
+#                                             # Highlight the best score
+#                                             if values:
+#                                                 max_idx = values.index(max(values))
+#                                                 bars[max_idx].set_color('green')
+#                                                 bars[max_idx].set_label('Best')
+                                            
+#                                             # Set labels and title
+#                                             ax.set_xlabel('Suggestions', fontsize=10)
+#                                             ax.set_ylabel('Score', fontsize=10)
+#                                             ax.set_title(label, fontsize=12, fontweight='bold')
+#                                             ax.set_xticks(range(len(top_suggestions)))
+#                                             ax.set_xticklabels(top_suggestions, rotation=45, ha='right', fontsize=9)
+                                            
+#                                             # Add value labels on bars
+#                                             for i, (bar, value) in enumerate(zip(bars, values)):
+#                                                 height = bar.get_height()
+#                                                 ax.text(bar.get_x() + bar.get_width()/2., height,
+#                                                        f'{value:.3f}',
+#                                                        ha='center', va='bottom', fontsize=8)
+                                        
+#                                         plt.tight_layout()
+#                                         st.pyplot(fig)
+                                        
+#                                         # Show detailed metrics table for visualization
+#                                         st.write("**Detailed Metrics for Top 5 Suggestions:**")
+#                                         viz_data = []
+#                                         for suggestion, metrics in top_5_candidates:
+#                                             viz_data.append({
+#                                                 'Word': suggestion,
+#                                                 'Levenshtein': f"{metrics['levenshtein']:.3f}",
+#                                                 'Jaccard': f"{metrics['jaccard']:.3f}",
+#                                                 'N-gram': f"{metrics['ngram']:.3f}",
+#                                                 'Cosine': f"{metrics['cosine']:.3f}",
+#                                                 'Frequency': f"{metrics['frequency']*1000:.3f}",
+#                                                 'Combined': f"{metrics['combined_score']:.3f}"
+#                                             })
+#                                         df_viz = pd.DataFrame(viz_data)
+#                                         st.dataframe(df_viz, use_container_width=True)
+                                        
+#                                     except Exception as e:
+#                                         st.error(f"Error creating visualization: {str(e)}")
+#                                         st.info("Make sure matplotlib is installed: pip install matplotlib")
+#                                 elif selected_candidates:
+#                                     st.warning(f"Not enough suggestions for '{selected_error}' to create visualization (need at least 3)")
+#                                 else:
+#                                     st.warning(f"No candidates found for '{selected_error}'")
+#                             else:
+#                                 st.info("No errors found to visualize")
+#                 else:
+#                     st.success("✅ No spelling errors detected!")
+#     else:
+#         st.info("👆 Please load the medical corpus first using the button in the sidebar.")
+    
+#     # Footer with techniques used
+#     st.markdown("---")
+#     with st.expander("ℹ️ NLP Techniques Used"):
+#         st.write("""
+#         **Similarity Metrics:**
+#         - **Levenshtein Distance** (25% weight): Calculates minimum edit operations needed
+#         - **Jaccard Similarity** (20% weight): Measures character set overlap between words
+#         - **N-gram Similarity** (15% weight): Character sequence similarity for phonetic matching
+#         - **Cosine Similarity** (15% weight): Context-based similarity using TF-IDF vectors
+#         - **Frequency Analysis** (15% weight): Ranks by occurrence in medical literature
+#         - **Bigram Probability** (10% weight): Context probability based on word pairs
+        
+#         **Combined Scoring Formula:**
+#         ```
+#         score = 0.25×levenshtein + 0.20×jaccard + 0.15×ngram + 
+#                 0.15×cosine + 0.15×frequency + 0.10×bigram
+#         ```
+        
+#         **Corpus Sources:**
+#         - MTSamples: Medical transcriptions from 40+ specialties
+#         - PubMed: Current medical research abstracts
+#         - Medical Dictionary: Comprehensive medical terminology database
+#         """)
+
+# if __name__ == "__main__":
+#     create_gui()
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from collections import Counter, defaultdict
+import re
+import requests
+from typing import List, Tuple, Dict, Set
+import nltk
+from nltk.tokenize import word_tokenize
+import string
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+
+# Download required NLTK data
+try:
+    nltk.download('punkt', quiet=True)
+    nltk.download('stopwords', quiet=True)
+except:
+    pass
+
+class EnhancedSpellingCorrector:
+    def __init__(self):
+        self.vocabulary = set()
+        self.word_freq = Counter()
+        self.bigrams = defaultdict(Counter)
+        self.trigrams = defaultdict(Counter)
+        self.corpus_text = ""
+        
+        # Enhanced error detection patterns
+        self.homophones = {
+            'too': 'two', 'two': 'too', 'to': ['two', 'too'],
+            'there': 'their', 'their': 'there', 'they\'re': ['there', 'their'],
+            'your': 'you\'re', 'you\'re': 'your',
+            'its': 'it\'s', 'it\'s': 'its',
+            'than': 'then', 'then': 'than',
+            'lose': 'loose', 'loose': 'lose',
+            'affect': 'effect', 'effect': 'affect',
+            'accept': 'except', 'except': 'accept',
+        }
+        
+        # Medical-specific homophones and common errors
+        self.medical_homophones = {
+            'dose': 'does', 'does': 'dose',
+            'mucus': 'mucous', 'mucous': 'mucus',
+            'breath': 'breathe', 'breathe': 'breath',
+            'conscious': 'conscience', 'conscience': 'conscious',
+        }
+        
+        # Common medical misspellings with correct forms
+        self.medical_corrections = {
+            'diabts': 'diabetes', 'diabetis': 'diabetes', 'diabetic': 'diabetes',
+            'aspirn': 'aspirin', 'asprin': 'aspirin',
+            'insullin': 'insulin', 'insuln': 'insulin',
+            'stomache': 'stomach', 'stomack': 'stomach',
+            'symtom': 'symptom', 'symptm': 'symptom', 'sympton': 'symptom',
+            'patiant': 'patient', 'pateint': 'patient', 'patinet': 'patient',
+            'docter': 'doctor', 'doctr': 'doctor', 'doctpr': 'doctor',
+            'urinaton': 'urination', 'urinatn': 'urination',
+            'thrist': 'thirst', 'thirsy': 'thirsty',
+            'glucos': 'glucose', 'glucoes': 'glucose',
+            'hypertention': 'hypertension', 'hypertenson': 'hypertension',
+            'medicaton': 'medication', 'mediation': 'medication',
+            'treatmnt': 'treatment', 'tretment': 'treatment',
+            'surger': 'surgery', 'surgury': 'surgery',
+            'hosptal': 'hospital', 'hosital': 'hospital',
+        }
+        
+        # Numerical context patterns
+        self.number_patterns = {
+            'tablets': r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(tablet|pill|capsule|dose)',
+            'times': r'\b(once|twice|thrice|\d+\s*times?|one\s*time|two\s*times)',
+            'daily': r'\b(daily|per\s*day|each\s*day|every\s*day)',
+        }
+        
+    def load_corpus(self):
+        """Load comprehensive medical corpus from MTSamples + PubMed API"""
+        try:
+            import requests
+            corpus_words = []
+        
+            # ============ PART 1: Load MTSamples Dataset ============
+            st.info("Loading medical transcriptions corpus...")
+            mtsamples_loaded = False
+        
+            try:
+                # First try to download MTSamples automatically from GitHub mirror
+                url = "https://raw.githubusercontent.com/chandelsman/Medical-Text-Classification/master/data/mtsamples.csv"
+                df = pd.read_csv(url)
+            
+                # Process medical transcriptions
+                for idx, row in df.iterrows():
+                    # Get transcription text
+                    if pd.notna(row.get('transcription', '')):
+                        text = str(row['transcription']).lower()
+                        words = re.findall(r'\b[a-z]+\b', text)
+                        corpus_words.extend(words)
+                
+                    # Add medical specialties
+                    if pd.notna(row.get('medical_specialty', '')):
+                        specialty = str(row['medical_specialty']).lower()
+                        corpus_words.extend(specialty.replace('/', ' ').split())
+                
+                    # Add keywords
+                    if pd.notna(row.get('keywords', '')):
+                        keywords = str(row['keywords']).lower()
+                        corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+                    # Add sample names (procedures)
+                    if pd.notna(row.get('sample_name', '')):
+                        sample = str(row['sample_name']).lower()
+                        corpus_words.extend(sample.split())
+            
+                mtsamples_loaded = True
+                st.success(f"✓ Loaded MTSamples: {len(set(corpus_words))} unique terms")
+            
+            except Exception as e1:
+                # If download fails, try local file
+                try:
+                    df = pd.read_csv('mtsamples.csv')
+                
+                    for idx, row in df.iterrows():
+                        if pd.notna(row.get('transcription', '')):
+                            text = str(row['transcription']).lower()
+                            words = re.findall(r'\b[a-z]+\b', text)
+                            corpus_words.extend(words)
+                    
+                        if pd.notna(row.get('medical_specialty', '')):
+                            specialty = str(row['medical_specialty']).lower()
+                            corpus_words.extend(specialty.replace('/', ' ').split())
+                    
+                        if pd.notna(row.get('keywords', '')):
+                            keywords = str(row['keywords']).lower()
+                            corpus_words.extend([k.strip() for k in keywords.split(',')])
+                
+                    mtsamples_loaded = True
+                    st.success(f"✓ Loaded local MTSamples: {len(set(corpus_words))} unique terms")
+                
+                except FileNotFoundError:
+                    st.warning("MTSamples not found locally. Download from: https://www.kaggle.com/datasets/tboyle10/medicaltranscriptions")
+                    st.info("Continuing with PubMed data only...")
+        
+            # ============ PART 2: Load PubMed Medical Literature ============
+            st.info("Fetching medical literature from PubMed...")
+        
+            base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+            # Comprehensive medical search terms
+            medical_topics = [
+                'clinical diagnosis', 'patient treatment', 'medical therapy',
+                'diabetes mellitus', 'hypertension management', 'cancer treatment',
+                'cardiovascular disease', 'infectious disease', 'neurological disorders',
+                'pediatric medicine', 'surgical procedures', 'pharmacology drugs',
+                'emergency medicine', 'internal medicine', 'psychiatry mental health',
+                'orthopedic surgery', 'obstetrics gynecology', 'radiology imaging',
+                'anesthesiology', 'pathology laboratory', 'dermatology skin',
+                'ophthalmology eye', 'otolaryngology ENT', 'urology kidney',
+                'gastroenterology digestive', 'endocrinology hormones', 'hematology blood',
+                'immunology allergy', 'nephrology renal', 'pulmonology respiratory',
+                'rheumatology arthritis', 'clinical trials', 'medical research'
+            ]
+        
+            # Progress bar for PubMed loading
+            progress_bar = st.progress(0)
+            pubmed_words = []
+        
+            for idx, topic in enumerate(medical_topics):
+                try:
+                    # Search for articles
+                    search_url = f"{base_url}esearch.fcgi?db=pubmed&term={topic}&retmax=100&retmode=json"
+                    search_response = requests.get(search_url, timeout=5)
+                    search_data = search_response.json()
+                
+                    # Get PMIDs
+                    id_list = search_data.get('esearchresult', {}).get('idlist', [])[:50]
+                
+                    if id_list:
+                        # Fetch abstracts
+                        ids_string = ','.join(id_list)
+                        fetch_url = f"{base_url}efetch.fcgi?db=pubmed&id={ids_string}&rettype=abstract"
+                        fetch_response = requests.get(fetch_url, timeout=10)
+                    
+                        # Extract medical terms (3+ characters)
+                        text = fetch_response.text.lower()
+                        words = [w for w in re.findall(r'\b[a-z]+\b', text) if len(w) >= 3]
+                        pubmed_words.extend(words)
+                
+                    # Update progress
+                    progress_bar.progress((idx + 1) / len(medical_topics))
+                
+                except Exception:
+                    continue
+        
+            progress_bar.empty()
+            corpus_words.extend(pubmed_words)
+            st.success(f"✓ Loaded PubMed: {len(set(pubmed_words))} unique terms")
+        
+            # ============ PART 3: Add Medical Terminology Database ============
+            st.info("Adding medical terminology database...")
+        
+            # Download medical terms list
+            try:
+                medical_terms_url = "https://raw.githubusercontent.com/glutanimate/wordlist-medicalterms-en/master/wordlist.txt"
+                response = requests.get(medical_terms_url)
+                medical_terms = response.text.lower().split('\n')
+                medical_terms = [term.strip() for term in medical_terms if term.strip() and len(term.strip()) >= 3]
+                corpus_words.extend(medical_terms * 10)  # Add with frequency weight
+                st.success(f"✓ Added {len(medical_terms)} medical dictionary terms")
+            except:
+                pass
+        
+            # ============ PART 4: Add Core Medical Vocabulary ============
+            core_medical_vocab = """
+            abdominal abdomen abnormal abscess absorption accident acidosis acne acute adenoma adhesion adipose admission adrenal adult adverse airway albumin alcohol allergy alopecia alzheimer ambulance amino amnesia amniotic amputation analgesia analgesic anaphylaxis anastomosis anatomy anemia anesthesia aneurysm angina angiogram angioplasty ankle anomaly anorexia antacid anterior antibiotic antibody antidepressant antigen antihistamine antimicrobial antipsychotic antiseptic antiviral anxiety aorta aortic appendectomy appendicitis appendix appetite arrhythmia arterial arteriosclerosis artery arthritis arthroscopy articulation artificial ascites aseptic aspiration aspirin assessment asthma asymptomatic ataxia atherosclerosis atrial atrium atrophy attack audiometry auditory auscultation autism autoimmune autonomic autopsy axial axis axon
+            bacteria bacterial bacterium balance balloon bandage barium barrier basal baseline behavior benign beta bicarbonate bilateral bile biliary bilirubin biochemical biopsy bipolar birth bladder bleeding blind blood blurred body bone bowel brachial bradycardia brain brainstem branch breast breath breathing bronchial bronchitis bronchoscopy bronchospasm bronchus bruise buffer bulimia burn burning bursa bursitis bypass
+            diabetes diabetic diagnosis diagnostic patient treatment medication therapy surgery hospital doctor nurse physician clinical examination symptoms disease condition disorder illness health medical care treatment procedure operation intervention therapy rehabilitation recovery healing medicine drug prescription dosage tablet capsule pill dose administration oral injection intravenous subcutaneous intramuscular topical
+            """
+        
+            core_words = core_medical_vocab.split()
+            corpus_words.extend(core_words * 50)  # Higher frequency for core terms
+        
+            # ============ PART 5: Build Final Corpus ============
+            self.word_freq = Counter(corpus_words)
+            self.vocabulary = set(self.word_freq.keys())
+        
+            # Build bigrams and trigrams for better context checking
+            st.info("Building n-gram models...")
+            for i in range(len(corpus_words) - 1):
+                if i < len(corpus_words) - 1:
+                    self.bigrams[corpus_words[i]][corpus_words[i + 1]] += 1
+                if i < len(corpus_words) - 2:
+                    trigram_key = f"{corpus_words[i]}_{corpus_words[i + 1]}"
+                    self.trigrams[trigram_key][corpus_words[i + 2]] += 1
+        
+            # Store sample text for context
+            self.corpus_text = ' '.join(corpus_words[:100000])
+        
+            # Final statistics
+            total_words = len(self.vocabulary)
+            total_tokens = sum(self.word_freq.values())
+        
+            st.success(f"""
+            ✅ **Enhanced Corpus Successfully Loaded!**
+            - Unique medical terms: **{total_words:,}**
+            - Total word tokens: **{total_tokens:,}**
+            - Bigram pairs: **{len(self.bigrams):,}**
+            - Trigram pairs: **{len(self.trigrams):,}**
+            - Sources: MTSamples + PubMed + Medical Dictionary + Enhanced Patterns
+            """)
+        
+            return True
+        
+        except Exception as e:
+            st.error(f"Error loading corpus: {e}")
+            return False
+
+    def detect_homophone_errors(self, text: str) -> List[Tuple[str, int, List[str]]]:
+        """Detect homophone errors using context analysis"""
+        words = re.findall(r'\b[a-zA-Z]+\b', text)
+        words_lower = [w.lower() for w in words]
+        errors = []
+        
+        for i, word in enumerate(words_lower):
+            # Check both general and medical homophones
+            all_homophones = {**self.homophones, **self.medical_homophones}
+            
+            if word in all_homophones:
+                alternatives = all_homophones[word]
+                if isinstance(alternatives, str):
+                    alternatives = [alternatives]
+                
+                # Analyze context to determine if homophone is incorrect
+                context_score = self._analyze_homophone_context(words_lower, i, word, alternatives)
+                
+                if context_score['should_correct']:
+                    errors.append((words[i], i, [context_score['best_alternative']]))
+        
+        return errors
+
+    def _analyze_homophone_context(self, words: List[str], pos: int, current_word: str, alternatives: List[str]) -> Dict:
+        """Analyze context to determine correct homophone"""
+        context_window = 3
+        start = max(0, pos - context_window)
+        end = min(len(words), pos + context_window + 1)
+        context_words = words[start:end]
+        
+        scores = {}
+        
+        # Special handling for common patterns
+        if current_word == 'too' and pos < len(words) - 1:
+            next_word = words[pos + 1]
+            # "too tablets" should be "two tablets"
+            if next_word in ['tablets', 'pills', 'capsules', 'doses', 'times', 'days', 'weeks', 'months']:
+                return {'should_correct': True, 'best_alternative': 'two'}
+            # "too much" is correct
+            elif next_word in ['much', 'many', 'often', 'late', 'early', 'high', 'low']:
+                return {'should_correct': False, 'best_alternative': current_word}
+        
+        if current_word == 'two' and pos < len(words) - 1:
+            next_word = words[pos + 1]
+            # "two much" should be "too much"
+            if next_word in ['much', 'many', 'often', 'late', 'early', 'high', 'low']:
+                return {'should_correct': True, 'best_alternative': 'too'}
+        
+        if current_word == 'dose' and pos > 0:
+            prev_word = words[pos - 1]
+            # "what dose he" should be "what does he"
+            if prev_word in ['what', 'when', 'where', 'how', 'why']:
+                return {'should_correct': True, 'best_alternative': 'does'}
+        
+        # Calculate bigram probabilities for each alternative
+        for alt in alternatives:
+            alt_score = 0
+            
+            # Check bigram with previous word
+            if pos > 0:
+                prev_bigram_prob = self.check_bigram_probability(words[pos-1], alt)
+                curr_bigram_prob = self.check_bigram_probability(words[pos-1], current_word)
+                if prev_bigram_prob > curr_bigram_prob * 2:
+                    alt_score += 1
+            
+            # Check bigram with next word
+            if pos < len(words) - 1:
+                next_bigram_prob = self.check_bigram_probability(alt, words[pos+1])
+                curr_next_bigram_prob = self.check_bigram_probability(current_word, words[pos+1])
+                if next_bigram_prob > curr_next_bigram_prob * 2:
+                    alt_score += 1
+            
+            scores[alt] = alt_score
+        
+        # Determine if correction is needed
+        if scores:
+            best_alt = max(scores, key=scores.get)
+            best_score = scores[best_alt]
+            
+            return {
+                'should_correct': best_score > 0,
+                'best_alternative': best_alt if best_score > 0 else current_word
+            }
+        
+        return {'should_correct': False, 'best_alternative': current_word}
+
+    def enhanced_candidate_generation(self, word: str, context: str = "", max_distance: int = 3) -> List[Tuple[str, Dict[str, float]]]:
+        """Enhanced candidate generation with better medical knowledge"""
+        candidates = []
+        word_lower = word.lower()
+        
+        # First check medical corrections dictionary
+        if word_lower in self.medical_corrections:
+            correct_word = self.medical_corrections[word_lower]
+            if correct_word in self.vocabulary:
+                high_confidence_metrics = {
+                    'levenshtein': 0.9,
+                    'jaccard': 0.8,
+                    'frequency': self.word_freq[correct_word] / sum(self.word_freq.values()),
+                    'cosine': 0.9,
+                    'ngram': 0.85,
+                    'bigram_prob': 0.8,
+                    'edit_distance': self.levenshtein_distance(word_lower, correct_word),
+                    'combined_score': 0.95,
+                    'source': 'medical_dictionary'
+                }
+                candidates.append((correct_word, high_confidence_metrics))
+        
+        # Generate candidates based on edit distance with higher threshold
+        potential_candidates = []
+        for vocab_word in self.vocabulary:
+            distance = self.levenshtein_distance(word_lower, vocab_word)
+            if distance <= max_distance:
+                potential_candidates.append((vocab_word, distance))
+        
+        # Enhanced scoring for remaining candidates
+        for vocab_word, edit_distance in potential_candidates:
+            # Skip if already added from medical corrections
+            if any(vocab_word == c[0] for c in candidates):
+                continue
+                
+            metrics = self._calculate_enhanced_metrics(word_lower, vocab_word, context, edit_distance)
+            candidates.append((vocab_word, metrics))
+        
+        # Sort by combined score
+        candidates.sort(key=lambda x: x[1]['combined_score'], reverse=True)
+        return candidates[:15]  # Return top 15 candidates
+
+    def _calculate_enhanced_metrics(self, original_word: str, candidate_word: str, context: str, edit_distance: int) -> Dict[str, float]:
+        """Calculate enhanced metrics with better weighting"""
+        metrics = {}
+        
+        # 1. Levenshtein Distance (normalized)
+        metrics['levenshtein'] = 1.0 / (edit_distance + 1)
+        
+        # 2. Enhanced Jaccard Similarity
+        metrics['jaccard'] = self.jaccard_similarity(original_word, candidate_word)
+        
+        # 3. Frequency Score with medical weighting
+        base_freq = self.word_freq[candidate_word] / sum(self.word_freq.values())
+        # Boost medical terms
+        if self._is_medical_term(candidate_word):
+            base_freq *= 2
+        metrics['frequency'] = min(base_freq * 1000, 1.0)  # Normalize
+        
+        # 4. Enhanced Cosine Similarity
+        if context:
+            context_with_candidate = context.replace(original_word, candidate_word)
+            metrics['cosine'] = self.calculate_context_similarity(context, context_with_candidate)
+        else:
+            metrics['cosine'] = 0.5
+        
+        # 5. N-gram similarity with multiple n values
+        ngram_scores = []
+        for n in [2, 3, 4]:
+            score = self.ngram_similarity(original_word, candidate_word, n)
+            if score > 0:
+                ngram_scores.append(score)
+        metrics['ngram'] = np.mean(ngram_scores) if ngram_scores else 0
+        
+        # 6. Enhanced bigram probability
+        metrics['bigram_prob'] = self._calculate_context_probability(original_word, candidate_word, context)
+        
+        # 7. Length similarity bonus
+        len_diff = abs(len(original_word) - len(candidate_word))
+        metrics['length_similarity'] = 1.0 / (len_diff + 1)
+        
+        # 8. Common prefix/suffix bonus
+        metrics['affix_similarity'] = self._calculate_affix_similarity(original_word, candidate_word)
+        
+        # 9. Phonetic similarity (simplified)
+        metrics['phonetic'] = self._calculate_phonetic_similarity(original_word, candidate_word)
+        
+        # Calculate weighted combined score with improved weights
+        combined_score = (
+            metrics['levenshtein'] * 0.20 +
+            metrics['jaccard'] * 0.15 +
+            metrics['frequency'] * 0.20 +  # Increased weight for frequency
+            metrics['cosine'] * 0.10 +
+            metrics['ngram'] * 0.10 +
+            metrics['bigram_prob'] * 0.10 +
+            metrics['length_similarity'] * 0.05 +
+            metrics['affix_similarity'] * 0.05 +
+            metrics['phonetic'] * 0.05
+        )
+        
+        metrics['combined_score'] = combined_score
+        metrics['edit_distance'] = edit_distance
+        
+        return metrics
+
+    def _is_medical_term(self, word: str) -> bool:
+        """Check if a word is likely a medical term"""
+        medical_suffixes = ['itis', 'osis', 'oma', 'emia', 'uria', 'pathy', 'therapy', 'scopy', 'tomy', 'ectomy']
+        medical_prefixes = ['cardio', 'neuro', 'gastro', 'hepato', 'nephro', 'pneumo', 'hemato', 'osteo']
+        
+        return any(word.endswith(suffix) for suffix in medical_suffixes) or \
+               any(word.startswith(prefix) for prefix in medical_prefixes)
+
+    def _calculate_context_probability(self, original_word: str, candidate_word: str, context: str) -> float:
+        """Enhanced context probability calculation"""
+        if not context:
+            return 0.5
+        
+        words = context.lower().split()
+        try:
+            word_idx = words.index(original_word)
+        except ValueError:
+            return 0.5
+        
+        prob_score = 0
+        count = 0
+        
+        # Check bigram with previous word
+        if word_idx > 0:
+            prev_word = words[word_idx - 1]
+            candidate_prob = self.check_bigram_probability(prev_word, candidate_word)
+            original_prob = self.check_bigram_probability(prev_word, original_word)
+            prob_score += candidate_prob / (original_prob + 1e-6)
+            count += 1
+        
+        # Check bigram with next word
+        if word_idx < len(words) - 1:
+            next_word = words[word_idx + 1]
+            candidate_prob = self.check_bigram_probability(candidate_word, next_word)
+            original_prob = self.check_bigram_probability(original_word, next_word)
+            prob_score += candidate_prob / (original_prob + 1e-6)
+            count += 1
+        
+        # Check trigram if possible
+        if word_idx > 0 and word_idx < len(words) - 1:
+            prev_word = words[word_idx - 1]
+            next_word = words[word_idx + 1]
+            trigram_key = f"{prev_word}_{candidate_word}"
+            if trigram_key in self.trigrams:
+                trigram_prob = self.trigrams[trigram_key][next_word] / max(sum(self.trigrams[trigram_key].values()), 1)
+                prob_score += trigram_prob * 2  # Weight trigrams higher
+                count += 1
+        
+        return min(prob_score / max(count, 1), 1.0) if count > 0 else 0.5
+
+    def _calculate_affix_similarity(self, word1: str, word2: str) -> float:
+        """Calculate similarity based on common prefixes and suffixes"""
+        max_len = max(len(word1), len(word2))
+        if max_len == 0:
+            return 1.0
+        
+        # Common prefix
+        prefix_len = 0
+        for i in range(min(len(word1), len(word2))):
+            if word1[i] == word2[i]:
+                prefix_len += 1
+            else:
+                break
+        
+        # Common suffix
+        suffix_len = 0
+        for i in range(1, min(len(word1), len(word2)) + 1):
+            if word1[-i] == word2[-i]:
+                suffix_len += 1
+            else:
+                break
+        
+        return (prefix_len + suffix_len) / max_len
+
+    def _calculate_phonetic_similarity(self, word1: str, word2: str) -> float:
+        """Simple phonetic similarity based on sound patterns"""
+        # Simple phonetic rules
+        phonetic_rules = {
+            'ph': 'f', 'gh': 'f', 'ck': 'k', 'qu': 'kw',
+            'x': 'ks', 'c': 'k', 'y': 'i', 'z': 's'
+        }
+        
+        def phonetic_transform(word):
+            word = word.lower()
+            for pattern, replacement in phonetic_rules.items():
+                word = word.replace(pattern, replacement)
+            return word
+        
+        phon1 = phonetic_transform(word1)
+        phon2 = phonetic_transform(word2)
+        
+        return self.jaccard_similarity(phon1, phon2)
+
+    def detect_numerical_context_errors(self, text: str) -> List[Tuple[str, int, List[str]]]:
+        """Detect errors in numerical contexts like 'too tablets' -> 'two tablets'"""
+        words = re.findall(r'\b[a-zA-Z]+\b', text)
+        words_lower = [w.lower() for w in words]
+        errors = []
+        
+        # Define numerical context patterns
+        numerical_indicators = [
+            'tablet', 'tablets', 'pill', 'pills', 'capsule', 'capsules',
+            'dose', 'doses', 'time', 'times', 'day', 'days', 'week', 'weeks',
+            'month', 'months', 'year', 'years', 'hour', 'hours', 'minute', 'minutes'
+        ]
+        
+        for i, word in enumerate(words_lower):
+            if word == 'too' and i < len(words_lower) - 1:
+                next_word = words_lower[i + 1]
+                if next_word in numerical_indicators:
+                    errors.append((words[i], i, ['two']))
+            elif word == 'to' and i < len(words_lower) - 1:
+                next_word = words_lower[i + 1]
+                if next_word in numerical_indicators and i > 0:
+                    prev_word = words_lower[i - 1]
+                    if prev_word in ['take', 'taking', 'give', 'giving', 'prescribe', 'prescribed']:
+                        errors.append((words[i], i, ['two']))
+        
+        return errors
+
+    def comprehensive_error_detection(self, text: str) -> Tuple[List, List]:
+        """Comprehensive error detection combining all methods"""
+        words = re.findall(r'\b[a-zA-Z]+\b', text)
+        
+        # Non-word errors (not in vocabulary)
+        non_word_errors = []
+        for word in words:
+            if word.lower() not in self.vocabulary:
+                candidates = self.enhanced_candidate_generation(word, context=text, max_distance=3)
+                non_word_errors.append((word, candidates))
+        
+        # Real-word errors (context-based)
+        real_word_errors = []
+        
+        # 1. Homophone errors
+        homophone_errors = self.detect_homophone_errors(text)
+        real_word_errors.extend(homophone_errors)
+        
+        # 2. Numerical context errors
+        numerical_errors = self.detect_numerical_context_errors(text)
+        real_word_errors.extend(numerical_errors)
+        
+        # 3. Medical context errors
+        medical_errors = self.detect_medical_context_errors_enhanced(text)
+        real_word_errors.extend(medical_errors)
+        
+        # Remove duplicates
+        seen_real_errors = set()
+        unique_real_errors = []
+        for error in real_word_errors:
+            key = (error[0], error[1])  # word and position
+            if key not in seen_real_errors:
+                seen_real_errors.add(key)
+                unique_real_errors.append(error)
+        
+        return non_word_errors, unique_real_errors
+
+    def detect_medical_context_errors_enhanced(self, text: str) -> List[Tuple[str, int, List[str]]]:
+        """Enhanced medical context error detection"""
+        words = text.lower().split()
+        errors = []
+        
+        # Enhanced medical patterns with more comprehensive rules
+        medical_patterns = {
+            'medication_dosage': {
+                'triggers': ['take', 'taking', 'give', 'giving', 'prescribe', 'prescribed', 'administer'],
+                'targets': ['tablet', 'tablets', 'pill', 'pills', 'capsule', 'capsules', 'dose', 'doses'],
+                'common_errors': {
+                    'too': 'two', 'to': 'two', 'tree': 'three', 'for': 'four', 'ate': 'eight'
+                }
+            },
+            'frequency_patterns': {
+                'triggers': ['daily', 'twice', 'once', 'per', 'every'],
+                'targets': ['day', 'week', 'month', 'hour', 'time', 'times'],
+                'common_errors': {
+                    'dai': 'day', 'weak': 'week', 'our': 'hour', 'tim': 'time'
+                }
+            },
+            'symptom_descriptions': {
+                'triggers': ['patient', 'symptoms', 'complaint', 'presenting', 'reports', 'experiences'],
+                'targets': ['pain', 'nausea', 'fever', 'fatigue', 'dizziness', 'headache'],
+                'common_errors': {
+                    'pane': 'pain', 'feaver': 'fever', 'nausia': 'nausea', 'fatige': 'fatigue'
+                }
+            }
+        }
+        
+        for i, word in enumerate(words):
+            if word not in self.vocabulary:
+                continue
+                
+            # Check each pattern
+            for pattern_name, pattern_data in medical_patterns.items():
+                context_match = False
+                
+                # Check for trigger words in context (±3 words)
+                context_start = max(0, i - 3)
+                context_end = min(len(words), i + 4)
+                context_words = words[context_start:context_end]
+                
+                has_trigger = any(trigger in context_words for trigger in pattern_data['triggers'])
+                has_target = any(target in context_words for target in pattern_data['targets'])
+                
+                if has_trigger or has_target:
+                    # Check if current word should be corrected
+                    for error_word, correct_word in pattern_data['common_errors'].items():
+                        if word == error_word and correct_word in self.vocabulary:
+                            # Verify correction makes sense in context
+                            if self._verify_medical_correction(words, i, word, correct_word):
+                                errors.append((word, i, [correct_word]))
+                                break
+        
+        return errors
+
+    def _verify_medical_correction(self, words: List[str], pos: int, error_word: str, correct_word: str) -> bool:
+        """Verify that a medical correction makes sense in context"""
+        # Check bigram probabilities
+        if pos > 0:
+            prev_word = words[pos - 1]
+            error_prob = self.check_bigram_probability(prev_word, error_word)
+            correct_prob = self.check_bigram_probability(prev_word, correct_word)
+            if correct_prob > error_prob * 1.5:  # At least 50% better
+                return True
+        
+        if pos < len(words) - 1:
+            next_word = words[pos + 1]
+            error_prob = self.check_bigram_probability(error_word, next_word)
+            correct_prob = self.check_bigram_probability(correct_word, next_word)
+            if correct_prob > error_prob * 1.5:
+                return True
+        
+        # Check frequency difference
+        error_freq = self.word_freq.get(error_word, 0)
+        correct_freq = self.word_freq.get(correct_word, 0)
+        if correct_freq > error_freq * 3:  # Significantly more common
+            return True
+        
+        return False
+
+    def generate_enhanced_corrected_text(self, text: str, confidence_threshold: float = 0.25) -> Tuple[str, List[Dict]]:
+        """Enhanced text correction with better accuracy"""
+        corrected_text = text
+        corrections_made = []
+        
+        # Get comprehensive errors
+        non_word_errors, real_word_errors = self.comprehensive_error_detection(text)
+        
+        # Track positions for accurate replacement
+        original_words = re.findall(r'\b[a-zA-Z]+\b', text)
+        
+        # Process non-word errors
+        for error_word, candidates in non_word_errors:
+            if candidates and len(candidates) > 0:
+                best_candidate = candidates[0]
+                best_word = best_candidate[0]
+                best_score = best_candidate[1]['combined_score']
+                
+                # Use lower threshold for medical dictionary corrections
+                actual_threshold = confidence_threshold
+                if best_candidate[1].get('source') == 'medical_dictionary':
+                    actual_threshold = 0.1  # Very permissive for known medical corrections
+                
+                if best_score >= actual_threshold:
+                    # Case-insensitive replacement
+                    pattern = re.compile(re.escape(error_word), re.IGNORECASE)
+                    corrected_text = pattern.sub(best_word, corrected_text)
+                    
+                    corrections_made.append({
+                        'original': error_word,
+                        'correction': best_word,
+                        'confidence': best_score,
+                        'edit_distance': best_candidate[1]['edit_distance'],
+                        'type': 'non-word',
+                        'source': best_candidate[1].get('source', 'algorithm')
+                    })
+        
+        # Process real-word errors
+        for error_word, position, alternatives in real_word_errors:
+            if alternatives:
+                best_alternative = alternatives[0]
+                
+                # Replace using word boundaries for accuracy
+                pattern = r'\b' + re.escape(error_word) + r'\b'
+                corrected_text = re.sub(pattern, best_alternative, corrected_text, flags=re.IGNORECASE)
+                
+                corrections_made.append({
+                    'original': error_word,
+                    'correction': best_alternative,
+                    'confidence': 0.8,  # High confidence for context-based corrections
+                    'position': position,
+                    'type': 'context',
+                    'source': 'context_analysis'
+                })
+        
+        return corrected_text, corrections_made
+
+    # Keep existing helper methods
+    def levenshtein_distance(self, s1: str, s2: str) -> int:
+        """Calculate minimum edit distance between two strings"""
+        if len(s1) < len(s2):
+            return self.levenshtein_distance(s2, s1)
+        
+        if len(s2) == 0:
+            return len(s1)
+        
+        prev_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (c1 != c2)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+        
+        return prev_row[-1]
+    
+    def jaccard_similarity(self, s1: str, s2: str) -> float:
+        """Calculate Jaccard similarity between two strings"""
+        set1 = set(s1)
+        set2 = set(s2)
+        intersection = set1.intersection(set2)
+        union = set1.union(set2)
+        return len(intersection) / len(union) if union else 0
+
+    def ngram_similarity(self, s1: str, s2: str, n: int = 2) -> float:
+        """Calculate n-gram similarity between two strings"""
+        def get_ngrams(s, n):
+            return set([s[i:i+n] for i in range(len(s)-n+1)])
+        
+        if len(s1) < n or len(s2) < n:
+            return 0.0
+        
+        ngrams1 = get_ngrams(s1, n)
+        ngrams2 = get_ngrams(s2, n)
+        
+        if not ngrams1 or not ngrams2:
+            return 0.0
+        
+        intersection = ngrams1.intersection(ngrams2)
+        union = ngrams1.union(ngrams2)
+        
+        return len(intersection) / len(union) if union else 0.0
+
+    def calculate_context_similarity(self, text1: str, text2: str) -> float:
+        """Calculate cosine similarity between two text snippets"""
+        try:
+            vectorizer = TfidfVectorizer(max_features=100)
+            tfidf_matrix = vectorizer.fit_transform([text1, text2])
+            similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+            return similarity
+        except:
+            return 0.5
+
+    def check_bigram_probability(self, prev_word: str, word: str) -> float:
+        """Check bigram probability with smoothing"""
+        if prev_word in self.bigrams:
+            total = sum(self.bigrams[prev_word].values())
+            if total > 0:
+                count = self.bigrams[prev_word][word]
+                # Add-one smoothing
+                smoothed_prob = (count + 1) / (total + len(self.vocabulary))
+                return smoothed_prob
+        return 1 / (len(self.vocabulary) + 1)
+
+
+def create_enhanced_gui():
+    st.set_page_config(page_title="Enhanced Medical Spelling Corrector", layout="wide")
+    
+    # Initialize session state
+    if 'corrector' not in st.session_state:
+        st.session_state.corrector = EnhancedSpellingCorrector()
+        st.session_state.corpus_loaded = False
+    
+    st.title("🏥 Enhanced Medical Spelling Correction System")
+    st.markdown("**Improved accuracy for context and spelling detection**")
+    st.markdown("---")
+    
+    # Sidebar
+    with st.sidebar:
+        st.header("📚 Corpus Management")
+        
+        if not st.session_state.corpus_loaded:
+            if st.button("Load Enhanced Medical Corpus", type="primary"):
+                with st.spinner("Loading enhanced medical corpus..."):
+                    if st.session_state.corrector.load_corpus():
+                        st.session_state.corpus_loaded = True
+                        st.success("Enhanced corpus loaded successfully!")
+                        st.rerun()
+        else:
+            st.success(f"✅ Enhanced corpus loaded: {len(st.session_state.corrector.vocabulary)} terms")
+            
+            # Quick test section
+            st.header("🧪 Quick Tests")
+            test_cases = [
+                "Take too tablets daily",
+                "The patiant has diabts",
+                "Prescribed insullin dose",
+                "Patient presents with symtoms",
+            ]
+            
+            selected_test = st.selectbox("Try a test case:", ["Select test..."] + test_cases)
+            if selected_test != "Select test...":
+                st.session_state.test_text = selected_test
+    
+    # Main content
+    if st.session_state.corpus_loaded:
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.header("✍️ Medical Text Input")
+            
+            # Load test text if selected
+            default_text = st.session_state.get('test_text', '')
+            
+            user_text = st.text_area(
+                "Enter medical text:",
+                value=default_text,
+                max_chars=500,
+                height=200,
+                placeholder="Example: Take too tablets daily for diabts control. The patiant needs insullin.",
+                key="enhanced_text_input"
+            )
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🔍 Analyze Text", type="primary"):
+                    if user_text:
+                        st.session_state.analyzing = True
+                        st.session_state.text_to_analyze = user_text
+                    else:
+                        st.warning("Please enter text to analyze.")
+            
+            with col_b:
+                confidence = st.slider("Confidence Threshold", 0.1, 0.9, 0.25, 0.05)
+        
+        with col2:
+            st.header("📊 Enhanced Analysis")
+            
+            if 'analyzing' in st.session_state and st.session_state.analyzing:
+                text = st.session_state.text_to_analyze
+                
+                # Comprehensive error detection
+                non_word_errors, real_word_errors = st.session_state.corrector.comprehensive_error_detection(text)
+                
+                # Enhanced correction
+                corrected_text, corrections = st.session_state.corrector.generate_enhanced_corrected_text(text, confidence)
+                
+                if non_word_errors or real_word_errors:
+                    st.subheader("❌ Detected Errors")
+                    
+                    # Non-word errors
+                    if non_word_errors:
+                        st.write("**Spelling Errors:**")
+                        for error_word, candidates in non_word_errors[:3]:  # Show first 3
+                            if candidates:
+                                best = candidates[0]
+                                st.error(f"'{error_word}' → '{best[0]}' (confidence: {best[1]['combined_score']:.1%})")
+                    
+                    # Context errors
+                    if real_word_errors:
+                        st.write("**Context Errors:**")
+                        for error_word, pos, alts in real_word_errors[:3]:
+                            if alts:
+                                st.warning(f"'{error_word}' → '{alts[0]}' (position: {pos})")
+                    
+                    # Show corrected text
+                    st.subheader("✨ Corrected Text")
+                    st.success(corrected_text)
+                    
+                    # Corrections summary
+                    if corrections:
+                        with st.expander(f"📝 {len(corrections)} Corrections Made"):
+                            for corr in corrections:
+                                confidence_pct = f"{corr['confidence']:.1%}"
+                                source = corr.get('source', 'algorithm')
+                                st.write(f"• **{corr['original']}** → **{corr['correction']}** ({confidence_pct}, {source})")
+                    
+                    # Side-by-side comparison
+                    st.subheader("🔄 Comparison")
+                    col_orig, col_corr = st.columns(2)
+                    with col_orig:
+                        st.text_area("Original", text, height=100, disabled=True)
+                    with col_corr:
+                        st.text_area("Corrected", corrected_text, height=100, disabled=True)
+                else:
+                    st.success("✅ No errors detected!")
+                
+                st.session_state.analyzing = False
+    else:
+        st.info("Please load the enhanced corpus to begin.")
+        
+        # Show improvements
+        st.subheader("🎯 Key Improvements")
+        improvements = [
+            "**Homophone Detection**: Correctly identifies 'too tablets' → 'two tablets'",
+            "**Medical Dictionary**: Direct corrections for 'diabts' → 'diabetes'", 
+            "**Context Analysis**: Enhanced trigram and bigram models",
+            "**Numerical Context**: Special handling for dosage instructions",
+            "**Phonetic Similarity**: Better matching for sound-alike words",
+            "**Medical Patterns**: Specialized rules for medical terminology"
+        ]
+        
+        for improvement in improvements:
+            st.write(f"• {improvement}")
+
+if __name__ == "__main__":
+    create_enhanced_gui()
