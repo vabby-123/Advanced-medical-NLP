@@ -366,6 +366,78 @@ class SpellingCorrector:
             prev_row = curr_row
         
         return prev_row[-1]
+    def get_corpus_statistics(self) -> Dict:
+        """Get statistics about the loaded corpus for visualization"""
+        if not self.vocabulary:
+            return {}
+        
+        # Get word length distribution
+        word_lengths = [len(word) for word in self.vocabulary]
+        length_distribution = Counter(word_lengths)
+        
+        # Get most common prefixes (3 letters)
+        prefixes = [word[:3] for word in self.vocabulary if len(word) >= 3]
+        prefix_freq = Counter(prefixes).most_common(10)
+        
+        # Get medical specialty distribution (based on common medical terms)
+        specialty_keywords = {
+            'Cardiology': ['heart', 'cardiac', 'coronary', 'artery', 'vascular'],
+            'Neurology': ['brain', 'neural', 'cerebral', 'nerve', 'cognitive'],
+            'Orthopedics': ['bone', 'joint', 'fracture', 'muscle', 'skeletal'],
+            'Gastroenterology': ['stomach', 'intestine', 'liver', 'digestive', 'bowel'],
+            'Pulmonology': ['lung', 'respiratory', 'breath', 'pulmonary', 'bronch'],
+            'Endocrinology': ['hormone', 'thyroid', 'diabetes', 'insulin', 'metabol'],
+            'Dermatology': ['skin', 'derma', 'rash', 'lesion', 'melanoma'],
+            'Oncology': ['cancer', 'tumor', 'carcin', 'malignant', 'metasta']
+        }
+        
+        specialty_counts = {}
+        for specialty, keywords in specialty_keywords.items():
+            count = sum(1 for word in self.vocabulary if any(kw in word for kw in keywords))
+            specialty_counts[specialty] = count
+        
+        return {
+            'total_words': len(self.vocabulary),
+            'total_tokens': sum(self.word_freq.values()),
+            'length_distribution': dict(length_distribution),
+            'top_prefixes': prefix_freq,
+            'specialty_distribution': specialty_counts,
+            'top_words': self.word_freq.most_common(20)
+        }
+
+    def get_error_analysis_stats(self, text: str) -> Dict:
+        """Analyze errors in text and return statistics for visualization"""
+        words = re.findall(r'\b[a-zA-Z]+\b', text)
+        
+        # Count error types
+        non_word_errors = []
+        for word in words:
+            if word.lower() not in self.vocabulary:
+                non_word_errors.append(word)
+        
+        real_word_errors = self.detect_real_word_errors_enhanced(text)
+        homophone_errors = self.detect_homophone_errors(text)
+        
+        # Error type distribution
+        error_types = {
+            'Non-word errors': len(non_word_errors),
+            'Context errors': len(real_word_errors) - len(homophone_errors),
+            'Homophone errors': len(homophone_errors),
+        }
+        
+        # Calculate text statistics
+        total_words = len(words)
+        error_rate = (len(non_word_errors) + len(real_word_errors)) / total_words if total_words > 0 else 0
+        
+        return {
+            'total_words': total_words,
+            'total_errors': len(non_word_errors) + len(real_word_errors),
+            'error_rate': error_rate,
+            'error_types': error_types,
+            'non_word_errors': non_word_errors,
+            'real_word_errors': real_word_errors
+        }
+
     
     def jaccard_similarity(self, s1: str, s2: str) -> float:
         """Calculate Jaccard similarity between two strings"""
@@ -1194,6 +1266,141 @@ class SpellingCorrector:
             }]
         
         return unique_corrections[:num_variations]
+    
+    
+def create_visualizations(corrector, text_analysis_stats=None):
+    """Create visualization charts for corpus and error analysis"""
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
+    # Set style
+    plt.style.use('seaborn-v0_8-darkgrid')
+    sns.set_palette("husl")
+    
+    if corrector.vocabulary:
+        stats = corrector.get_corpus_statistics()
+        
+        # Create visualization tabs
+        viz_tab1, viz_tab2, viz_tab3 = st.tabs(["📊 Corpus Statistics", "🔤 Word Analysis", "❌ Error Analysis"])
+        
+        with viz_tab1:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Word length distribution chart
+                if stats.get('length_distribution'):
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    lengths = sorted(stats['length_distribution'].keys())
+                    counts = [stats['length_distribution'][l] for l in lengths]
+                    ax.bar(lengths[:20], counts[:20], color='steelblue', alpha=0.7)
+                    ax.set_xlabel('Word Length (characters)')
+                    ax.set_ylabel('Number of Words')
+                    ax.set_title('Medical Term Length Distribution')
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
+                    plt.close()
+            
+            with col2:
+                # Medical specialty distribution pie chart
+                if stats.get('specialty_distribution'):
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    specialties = list(stats['specialty_distribution'].keys())
+                    counts = list(stats['specialty_distribution'].values())
+                    colors = plt.cm.Set3(range(len(specialties)))
+                    ax.pie(counts, labels=specialties, autopct='%1.1f%%', colors=colors, startangle=90)
+                    ax.set_title('Medical Specialty Term Distribution')
+                    st.pyplot(fig)
+                    plt.close()
+        
+        with viz_tab2:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Top medical terms bar chart
+                if stats.get('top_words'):
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    words = [w[0] for w in stats['top_words'][:15]]
+                    freqs = [w[1] for w in stats['top_words'][:15]]
+                    ax.barh(words, freqs, color='coral', alpha=0.7)
+                    ax.set_xlabel('Frequency')
+                    ax.set_ylabel('Medical Terms')
+                    ax.set_title('Top 15 Most Frequent Medical Terms')
+                    ax.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
+            
+            with col2:
+                # Common prefixes chart
+                if stats.get('top_prefixes'):
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    prefixes = [p[0] for p in stats['top_prefixes']]
+                    counts = [p[1] for p in stats['top_prefixes']]
+                    ax.barh(prefixes, counts, color='lightgreen', alpha=0.7)
+                    ax.set_xlabel('Frequency')
+                    ax.set_ylabel('Prefix (3 letters)')
+                    ax.set_title('Most Common Medical Term Prefixes')
+                    ax.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
+        
+        with viz_tab3:
+            if text_analysis_stats:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Error type distribution
+                    if text_analysis_stats.get('error_types'):
+                        fig, ax = plt.subplots(figsize=(8, 5))
+                        error_types = list(text_analysis_stats['error_types'].keys())
+                        counts = list(text_analysis_stats['error_types'].values())
+                        colors = ['#ff6b6b', '#4ecdc4', '#45b7d1']
+                        ax.bar(error_types, counts, color=colors, alpha=0.7)
+                        ax.set_ylabel('Number of Errors')
+                        ax.set_title('Error Type Distribution')
+                        ax.grid(True, alpha=0.3)
+                        
+                        # Add value labels on bars
+                        for i, (type_name, count) in enumerate(zip(error_types, counts)):
+                            ax.text(i, count + 0.1, str(count), ha='center', va='bottom')
+                        
+                        st.pyplot(fig)
+                        plt.close()
+                
+                with col2:
+                    # Error rate gauge chart
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    error_rate = text_analysis_stats.get('error_rate', 0) * 100
+                    
+                    # Create a simple gauge-like visualization
+                    wedges, texts = ax.pie([error_rate, 100-error_rate], 
+                                          colors=['#ff6b6b', '#e8e8e8'],
+                                          startangle=90,
+                                          counterclock=False)
+                    
+                    # Add center circle to create donut chart
+                    centre_circle = plt.Circle((0,0), 0.70, fc='white')
+                    fig.gca().add_artist(centre_circle)
+                    
+                    # Add text in center
+                    ax.text(0, 0, f'{error_rate:.1f}%\nError Rate', 
+                           ha='center', va='center', fontsize=16, fontweight='bold')
+                    
+                    ax.set_title('Text Error Rate')
+                    st.pyplot(fig)
+                    plt.close()
+                
+                # Summary statistics
+                st.info(f"""
+                **Text Analysis Summary:**
+                - Total words analyzed: {text_analysis_stats.get('total_words', 0)}
+                - Total errors found: {text_analysis_stats.get('total_errors', 0)}
+                - Error rate: {text_analysis_stats.get('error_rate', 0):.2%}
+                """)
+
+
+
 
 def create_gui():
     st.set_page_config(page_title="Advanced Medical Spelling Corrector", layout="wide")
@@ -1222,6 +1429,11 @@ def create_gui():
                         st.rerun()
         else:
             st.success(f"✓ Medical corpus loaded: {len(st.session_state.corrector.vocabulary)} words")
+            st.markdown("---")
+            st.header("📈 Visualizations")
+    
+            if st.button("Show Corpus Statistics", type="secondary"):
+                st.session_state.show_viz = True
             
             # Dictionary viewer
             st.header("📖 Medical Dictionary")
@@ -1279,6 +1491,22 @@ def create_gui():
     
     # Main content area
     if st.session_state.corpus_loaded:
+        if 'show_viz' in st.session_state and st.session_state.show_viz:
+            st.markdown("---")
+            st.header("📈 Medical Corpus Visualizations")
+    
+    # Get text analysis stats if text has been checked
+            text_stats = None
+            if 'text_to_check' in st.session_state:
+                text_stats = st.session_state.corrector.get_error_analysis_stats(st.session_state.text_to_check)
+    
+    # Create visualizations
+            create_visualizations(st.session_state.corrector, text_stats)
+    
+    # Add close button
+            if st.button("Close Visualizations"):
+                st.session_state.show_viz = False
+                st.rerun()
         col1, col2 = st.columns([1, 1])
         
         with col1:
